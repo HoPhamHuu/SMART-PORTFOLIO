@@ -23,9 +23,6 @@ pages = [
     "Portfolio Optimization (SLSQP)",
     "Portfolio Optimization (SGD)",
     "Portfolio Optimization (SGD - Sharpe)",
-    "Comparison with VN-Index (SLSQP)",
-    "Comparison with VN-Index (SGD)",
-    "Comparison with VN-Index (SGD - Sharpe)",
     "Data Visualization",
     "Company Information",
     "Financial Statements"  # New page added
@@ -37,7 +34,7 @@ page = st.sidebar.radio("Chọn trang", pages)
 if page == "Fetch Stock Data":
     st.header("Nhập mã cổ phiếu và tải dữ liệu")
     st.write("Nhập các mã cổ phiếu (phân cách bởi dấu phẩy, ví dụ: ACB, VCB):")
-    symbols_input = st.text_input("Mã cổ phiếu", "ACB, VCB")
+    symbols_input = st.text_input("Mã cổ phiếu")
     
     if st.button("Tải dữ liệu"):
         symbols = [s.strip().upper() for s in symbols_input.split(",") if s.strip()]
@@ -81,13 +78,14 @@ if page == "Fetch Stock Data":
 # Trang 2: Portfolio Optimization (SLSQP)
 ###########################################
 elif page == "Portfolio Optimization (SLSQP)":
-    st.header("Tối ưu hóa danh mục đầu tư (SLSQP)")
+    st.header("Portfolio Optimization (SLSQP)")
+    st.markdown("## Phần 1: Tối ưu hóa danh mục đầu tư (SLSQP)")
     try:
         processed_data = pd.read_csv("processed_stock_data.csv")
         processed_data['time'] = pd.to_datetime(processed_data['time'])
-        st.success("Đã tải dữ liệu xử lý từ file 'processed_stock_data.csv'.")
-    except Exception:
-        st.error("Không tìm thấy file 'processed_stock_data.csv'. Vui lòng chuyển đến trang 'Fetch Stock Data' để tải dữ liệu.")
+        st.success("Đã tải dữ liệu xử lý thành công.")
+    except FileNotFoundError:
+        st.error("File 'processed_stock_data.csv' không tồn tại. Vui lòng Fetch Stock Data trước.")
         st.stop()
     
     # Tính toán kỳ vọng lợi nhuận và ma trận hiệp phương sai
@@ -95,71 +93,147 @@ elif page == "Portfolio Optimization (SLSQP)":
     pivot_returns = processed_data.pivot(index='time', columns='symbol', values='daily_return')
     cov_matrix = pivot_returns.cov()
     
-    # Hàm mục tiêu: tối thiểu hóa độ rủi ro (volatility)
     def objective(weights, expected_returns, cov_matrix):
         return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
     
     constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
     bounds = tuple((0, 1) for _ in range(len(expected_returns)))
     total_expected_return = expected_returns.sum()
-    initial_weights = expected_returns / total_expected_return
-    
-    result = minimize(objective, initial_weights, args=(expected_returns, cov_matrix), 
+    init_weights = expected_returns / total_expected_return
+    result = minimize(objective, init_weights, args=(expected_returns, cov_matrix),
                       method='SLSQP', bounds=bounds, constraints=constraints)
-    optimal_weights = result.x
+    optimal_weights_slsqp = result.x
+
+    st.subheader("Trọng số tối ưu (SLSQP):")
+    for i, symbol in enumerate(expected_returns.index):
+        st.write(f"Stock: {symbol}, Optimal Weight: {optimal_weights_slsqp[i]:.4f}")
     
-    portfolio_df = pd.DataFrame({
+    # Biểu đồ trực quan: Optimal Portfolio Weights (Pie) & (Bar)
+    portfolio_data_slsqp = pd.DataFrame({
         'Stock': expected_returns.index,
-        'Optimal Weight': optimal_weights
+        'Optimal Weight': optimal_weights_slsqp
     })
-    st.subheader("Trọng số tối ưu của danh mục (SLSQP):")
-    st.dataframe(portfolio_df)
-    
-    fig = make_subplots(
+    fig_slsqp = make_subplots(
         rows=1, cols=2,
-        subplot_titles=['Biểu đồ Donut', 'Biểu đồ Cột'],
+        subplot_titles=['Optimal Portfolio Weights (Pie)', 'Optimal Portfolio Weights (Bar)'],
         specs=[[{'type': 'pie'}, {'type': 'bar'}]]
     )
-    fig.add_trace(
+    fig_slsqp.add_trace(
         go.Pie(
-            labels=portfolio_df['Stock'],
-            values=portfolio_df['Optimal Weight'],
+            labels=portfolio_data_slsqp['Stock'],
+            values=portfolio_data_slsqp['Optimal Weight'],
             hole=0.3,
             textinfo='percent+label',
+            textfont_size=14,
             marker=dict(
                 colors=['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15C', '#19D895', '#F2A900'],
                 line=dict(color='#000000', width=2)
-            )
+            ),
+            hoverinfo='label+percent'
         ),
         row=1, col=1
     )
-    column_colors = ['#FF6347', '#4682B4', '#32CD32', '#FFD700', '#8A2BE2', '#FF1493', '#00FA9A']
-    fig.add_trace(
+    fig_slsqp.add_trace(
         go.Bar(
-            x=portfolio_df['Stock'],
-            y=portfolio_df['Optimal Weight'],
-            marker=dict(color=column_colors, line=dict(color='#000000', width=2))
+            x=portfolio_data_slsqp['Stock'],
+            y=portfolio_data_slsqp['Optimal Weight'],
+            marker=dict(
+                color=['#FFA07A', '#7B68EE', '#98FB98', '#D2691E', '#6495ED', '#FF69B4', '#2E8B57'],
+                line=dict(color='#000000', width=2)
+            ),
         ),
         row=1, col=2
     )
-    fig.update_layout(title="So sánh trọng số tối ưu (SLSQP)", title_x=0.5)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    processed_data['weighted_return'] = processed_data['daily_return'] * processed_data['symbol'].map(
-        dict(zip(expected_returns.index, optimal_weights))
+    fig_slsqp.update_layout(
+        title="Optimal Portfolio Weights (SLSQP) Comparison",
+        title_x=0.5,
+        height=500,
+        width=1000,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        showlegend=True
     )
-    portfolio_daily_return = processed_data.groupby('time')['weighted_return'].sum().reset_index()
-    portfolio_daily_return.rename(columns={'weighted_return': 'daily_return'}, inplace=True)
-    portfolio_daily_return['cumulative_portfolio_return'] = (1 + portfolio_daily_return['daily_return']).cumprod()
+    st.plotly_chart(fig_slsqp, use_container_width=True)
+    
+    # Tính lợi nhuận tích lũy của danh mục (SLSQP)
+    processed_data['weighted_return_slsqp'] = processed_data['daily_return'] * processed_data['symbol'].map(
+        dict(zip(expected_returns.index, optimal_weights_slsqp))
+    )
+    portfolio_daily_return_slsqp = processed_data.groupby('time')['weighted_return_slsqp'].sum().reset_index()
+    portfolio_daily_return_slsqp.rename(columns={'weighted_return_slsqp': 'daily_return'}, inplace=True)
+    portfolio_daily_return_slsqp['cumulative_portfolio_return'] = (1 + portfolio_daily_return_slsqp['daily_return']).cumprod()
     
     st.subheader("Lợi nhuận tích lũy của danh mục (SLSQP)")
-    st.line_chart(portfolio_daily_return.set_index('time')['cumulative_portfolio_return'])
+    st.line_chart(portfolio_daily_return_slsqp.set_index('time')['cumulative_portfolio_return'])
+    
+    # Expander chứa phần so sánh với VN-Index
+    with st.expander("So sánh với VN-Index"):
+        try:
+            vnindex_data = pd.read_csv("vnindex_data.csv")
+            vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
+            st.success("Đã tải dữ liệu VN-Index từ file 'vnindex_data.csv'.")
+        except:
+            st.warning("Không tìm thấy file 'vnindex_data.csv'. Đang tải dữ liệu VN-Index...")
+            try:
+                stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
+                vnindex_data = stock.quote.history(start='2020-01-01', end='2024-12-31')
+                vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
+                vnindex_data.to_csv("vnindex_data.csv", index=False)
+                st.success("Đã lưu dữ liệu VN-Index vào file 'vnindex_data.csv'.")
+            except Exception as e:
+                st.error(f"Lỗi khi tải dữ liệu VN-Index: {e}")
+                st.stop()
+        
+        vnindex_data['market_return'] = vnindex_data['close'].pct_change()
+        vnindex_data['cumulative_daily_return'] = (1 + vnindex_data['market_return']).cumprod()
+        
+        comparison_slsqp = pd.merge(
+            portfolio_daily_return_slsqp,
+            vnindex_data[['time', 'cumulative_daily_return']],
+            on='time',
+            how='inner'
+        )
+        comparison_slsqp.rename(columns={
+            'cumulative_portfolio_return': 'Portfolio Return (SLSQP)',
+            'cumulative_daily_return': 'VN-Index Return'
+        }, inplace=True)
+        
+        st.subheader("Bảng so sánh lợi nhuận (10 dòng cuối) - SLSQP vs VN-Index")
+        st.dataframe(comparison_slsqp[['time', 'Portfolio Return (SLSQP)', 'VN-Index Return']].tail(10))
+        
+        fig_comp_slsqp = go.Figure()
+        fig_comp_slsqp.add_trace(go.Scatter(
+            x=comparison_slsqp['time'],
+            y=comparison_slsqp['Portfolio Return (SLSQP)'],
+            mode='lines',
+            name='Portfolio Return (SLSQP)',
+            line=dict(color='blue', width=2),
+            hovertemplate='Date: %{x}<br>Portfolio Return (SLSQP): %{y:.2%}<extra></extra>'
+        ))
+        fig_comp_slsqp.add_trace(go.Scatter(
+            x=comparison_slsqp['time'],
+            y=comparison_slsqp['VN-Index Return'],
+            mode='lines',
+            name='VN-Index Return',
+            line=dict(color='red', width=2),
+            hovertemplate='Date: %{x}<br>VN-Index Return: %{y:.2%}<extra></extra>'
+        ))
+        fig_comp_slsqp.update_layout(
+            title="So sánh lợi nhuận danh mục (SLSQP) vs VN-Index",
+            xaxis_title="Thời gian",
+            yaxis_title="Lợi nhuận tích lũy",
+            template="plotly_white"
+        )
+        st.plotly_chart(fig_comp_slsqp, use_container_width=True)
+        comparison_slsqp.to_csv("portfolio_vs_vnindex_comparison_slsqp.csv", index=False)
+        st.write("Comparison saved to 'portfolio_vs_vnindex_comparison_slsqp.csv'.")
 
 ###########################################
 # Trang 3: Portfolio Optimization (SGD)
 ###########################################
 elif page == "Portfolio Optimization (SGD)":
-    st.header("Tối ưu hóa danh mục đầu tư (SGD)")
+    st.header("Portfolio Optimization (SGD)")
+    st.markdown("## Phần 2: Tối ưu hóa danh mục đầu tư (SGD)")
     try:
         processed_data = pd.read_csv("processed_stock_data.csv")
         processed_data['time'] = pd.to_datetime(processed_data['time'])
@@ -176,14 +250,7 @@ elif page == "Portfolio Optimization (SGD)":
         return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
     
     def return_based_weights(expected_returns):
-        total_returns = np.sum(expected_returns)
-        return expected_returns / total_returns
-    
-    weights = return_based_weights(expected_returns)
-    
-    st.subheader("Initial Portfolio Weights (dựa trên kỳ vọng lợi nhuận):")
-    for i, symbol in enumerate(expected_returns.index):
-        st.write(f"Stock: {symbol}, Weight: {weights[i]:.4f}")
+        return expected_returns / expected_returns.sum()
     
     def sgd_optimization(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000):
         weights = return_based_weights(expected_returns)
@@ -192,8 +259,6 @@ elif page == "Portfolio Optimization (SGD)":
             weights -= learning_rate * grad
             weights = np.maximum(weights, 0)
             weights /= np.sum(weights)
-            if epoch % 100 == 0:
-                st.write(f"Epoch {epoch + 1}, Volatility: {portfolio_volatility(weights, cov_matrix):.6f}")
         return weights
     
     optimal_weights_sgd = sgd_optimization(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000)
@@ -202,11 +267,13 @@ elif page == "Portfolio Optimization (SGD)":
     for i, symbol in enumerate(expected_returns.index):
         st.write(f"Stock: {symbol}, Optimal Weight: {optimal_weights_sgd[i]:.4f}")
     
+    # Biểu đồ trực quan: Pie & Bar cho SGD
     portfolio_data_sgd = pd.DataFrame({
         'Stock': expected_returns.index,
         'Optimal Weight': optimal_weights_sgd
     })
-    
+    colors = ['#FFA07A', '#7B68EE', '#98FB98', '#D2691E', '#6495ED', '#FF69B4', '#2E8B57']
+
     fig_sgd = make_subplots(
         rows=1, cols=2,
         subplot_titles=['Optimal Portfolio Weights (Pie)', 'Optimal Portfolio Weights (Bar)'],
@@ -220,7 +287,7 @@ elif page == "Portfolio Optimization (SGD)":
             textinfo='percent+label',
             textfont_size=14,
             marker=dict(
-                colors=['#FF6347', '#4682B4', '#32CD32', '#FFD700', '#8A2BE2', '#FF1493', '#00FA9A'],
+                colors=colors,
                 line=dict(color='#000000', width=2)
             ),
             hoverinfo='label+percent',
@@ -232,7 +299,7 @@ elif page == "Portfolio Optimization (SGD)":
             x=portfolio_data_sgd['Stock'],
             y=portfolio_data_sgd['Optimal Weight'],
             marker=dict(
-                color=['#FFA07A', '#7B68EE', '#98FB98', '#D2691E', '#6495ED', '#FF69B4', '#2E8B57'],
+                color=colors,
                 line=dict(color='#000000', width=2)
             ),
         ),
@@ -248,7 +315,9 @@ elif page == "Portfolio Optimization (SGD)":
         showlegend=True
     )
     st.plotly_chart(fig_sgd, use_container_width=True)
+
     
+    # Tính lợi nhuận tích lũy của danh mục (SGD)
     processed_data['weighted_return_sgd'] = processed_data['daily_return'] * processed_data['symbol'].map(
         dict(zip(expected_returns.index, optimal_weights_sgd))
     )
@@ -258,18 +327,82 @@ elif page == "Portfolio Optimization (SGD)":
     
     st.subheader("Lợi nhuận tích lũy của danh mục (SGD)")
     st.line_chart(portfolio_daily_return_sgd.set_index('time')['cumulative_portfolio_return'])
+    
+    # Expander chứa phần so sánh với VN-Index cho SGD
+    with st.expander("So sánh với VN-Index"):
+        try:
+            vnindex_data = pd.read_csv("vnindex_data.csv")
+            vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
+            st.success("VN-Index data loaded successfully from 'vnindex_data.csv'.")
+        except:
+            st.warning("Không tìm thấy file 'vnindex_data.csv'. Đang tải dữ liệu VN-Index...")
+            try:
+                stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
+                vnindex_data = stock.quote.history(start='2020-01-01', end='2024-12-31')
+                vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
+                vnindex_data.to_csv("vnindex_data.csv", index=False)
+                st.success("VN-Index data saved successfully.")
+            except Exception as e:
+                st.error(f"Lỗi khi tải dữ liệu VN-Index: {e}")
+                st.stop()
+        
+        vnindex_data['market_return'] = vnindex_data['close'].pct_change()
+        vnindex_data['cumulative_daily_return'] = (1 + vnindex_data['market_return']).cumprod()
+        
+        comparison_sgd = pd.merge(
+            portfolio_daily_return_sgd,
+            vnindex_data[['time', 'cumulative_daily_return']],
+            on='time',
+            how='inner'
+        )
+        comparison_sgd.rename(columns={
+            'cumulative_portfolio_return': 'Portfolio Return (SGD)',
+            'cumulative_daily_return': 'VN-Index Return'
+        }, inplace=True)
+        
+        st.subheader("Bảng so sánh lợi nhuận (10 dòng cuối) - SGD vs VN-Index")
+        st.dataframe(comparison_sgd[['time', 'Portfolio Return (SGD)', 'VN-Index Return']].tail(10))
+        
+        fig_comp_sgd = go.Figure()
+        fig_comp_sgd.add_trace(go.Scatter(
+            x=comparison_sgd['time'],
+            y=comparison_sgd['Portfolio Return (SGD)'],
+            mode='lines',
+            name='Portfolio Return (SGD)',
+            line=dict(color='green', width=2),
+            hovertemplate='Date: %{x}<br>Portfolio Return (SGD): %{y:.2%}<extra></extra>'
+        ))
+        fig_comp_sgd.add_trace(go.Scatter(
+            x=comparison_sgd['time'],
+            y=comparison_sgd['VN-Index Return'],
+            mode='lines',
+            name='VN-Index Return',
+            line=dict(color='red', width=2),
+            hovertemplate='Date: %{x}<br>VN-Index Return: %{y:.2%}<extra></extra>'
+        ))
+        fig_comp_sgd.update_layout(
+            title="Comparison of Portfolio Return (SGD) vs VN-Index Return",
+            xaxis_title="Time",
+            yaxis_title="Cumulative Return",
+            template="plotly_white",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_comp_sgd, use_container_width=True)
+        comparison_sgd.to_csv("portfolio_vs_vnindex_comparison_sgd.csv", index=False)
+        st.write("Comparison saved to 'portfolio_vs_vnindex_comparison_sgd.csv'.")
 
 ###########################################
 # Trang 4: Portfolio Optimization (SGD - Sharpe)
 ###########################################
 elif page == "Portfolio Optimization (SGD - Sharpe)":
-    st.header("Portfolio Optimization Using SGD with Sharpe Ratio Maximization")
+    st.header("Portfolio Optimization (SGD - Sharpe)")
+    st.markdown("## Phần 3: Portfolio Optimization Using SGD with Sharpe Ratio Maximization")
     try:
         processed_data = pd.read_csv("processed_stock_data.csv")
         processed_data['time'] = pd.to_datetime(processed_data['time'])
         st.success("Đã tải dữ liệu xử lý từ file 'processed_stock_data.csv'.")
     except Exception:
-        st.error("Không tìm thấy file 'processed_stock_data.csv'. Vui lòng chuyển đến trang 'Fetch Stock Data' để tải dữ liệu.")
+        st.error("File 'processed_stock_data.csv' không tồn tại. Please go to 'Fetch Stock Data' page to load data.")
         st.stop()
     
     if 'symbol' not in processed_data.columns or 'daily_return' not in processed_data.columns:
@@ -303,22 +436,24 @@ elif page == "Portfolio Optimization (SGD - Sharpe)":
                 st.write(f"Convergence reached after {epoch + 1} epochs")
                 break
             previous_weights = weights.copy()
-            if epoch % 100 == 0:
-                st.write(f"Epoch {epoch + 1}, Sharpe Ratio: {sharpe_ratio:.4f}")
-        return best_weights, best_sharpe_ratio
-    
-    optimal_weights_sgd_bsharp, best_sharpe_ratio = sgd_portfolio_optimization(expected_returns, cov_matrix)
+        return best_weights
+
+    optimal_weights_sgd_bsharp = sgd_portfolio_optimization(expected_returns, cov_matrix)
     
     st.subheader("Optimal Portfolio Weights (SGD - Sharpe):")
     for i, symbol in enumerate(expected_returns.index):
         st.write(f"Stock: {symbol}, Optimal Weight: {optimal_weights_sgd_bsharp[i]:.4f}")
-    st.write(f"Best Sharpe Ratio: {best_sharpe_ratio:.4f}")
+    st.write(f"Best Sharpe Ratio: {np.dot(optimal_weights_sgd_bsharp, expected_returns) / np.sqrt(np.dot(optimal_weights_sgd_bsharp.T, np.dot(cov_matrix, optimal_weights_sgd_bsharp))):.4f}")
     
-    portfolio_data = pd.DataFrame({
+    # Biểu đồ trực quan: Pie & Bar cho SGD - Sharpe
+    portfolio_data_sharpe = pd.DataFrame({
         'Stock': expected_returns.index,
         'Optimal Weight': optimal_weights_sgd_bsharp
     })
-    
+    # Số lượng cổ phiếu cần gán màu
+    num_stocks = len(portfolio_data_sharpe['Stock'])
+    colors = [random_color() for _ in range(num_stocks)]
+
     fig_sharpe = make_subplots(
         rows=1, cols=2,
         subplot_titles=['Optimal Portfolio Weights (Pie)', 'Optimal Portfolio Weights (Bar)'],
@@ -326,34 +461,33 @@ elif page == "Portfolio Optimization (SGD - Sharpe)":
     )
     fig_sharpe.add_trace(
         go.Pie(
-            labels=portfolio_data['Stock'],
-            values=portfolio_data['Optimal Weight'],
+            labels=portfolio_data_sharpe['Stock'],
+            values=portfolio_data_sharpe['Optimal Weight'],
             hole=0.3,
             textinfo='percent+label',
             textfont_size=14,
             marker=dict(
-                colors=['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15C', '#19D895', '#F2A900'],
+                colors=colors,  # Sử dụng danh sách màu random
                 line=dict(color='#000000', width=2)
             ),
-            hoverinfo='label+percent',
+            hoverinfo='label+percent'
         ),
         row=1, col=1
     )
     fig_sharpe.add_trace(
         go.Bar(
-            x=portfolio_data['Stock'],
-            y=portfolio_data['Optimal Weight'],
+            x=portfolio_data_sharpe['Stock'],
+            y=portfolio_data_sharpe['Optimal Weight'],
             marker=dict(
-                color=['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15C', '#19D895', '#F2A900'],
+                color=colors,  # Sử dụng danh sách màu random
                 line=dict(color='#000000', width=2)
-            ),
+            )
         ),
         row=1, col=2
     )
     fig_sharpe.update_layout(
-        title='Optimal Portfolio Weights (SGD - Sharpe) Comparison',
+        title="Optimal Portfolio Weights (SGD - Sharpe) Comparison",
         title_x=0.5,
-        title_font=dict(size=18, family='Arial', color='#1f77b4'),
         height=500,
         width=1000,
         paper_bgcolor='rgba(0,0,0,0)',
@@ -361,8 +495,8 @@ elif page == "Portfolio Optimization (SGD - Sharpe)":
         showlegend=True
     )
     st.plotly_chart(fig_sharpe, use_container_width=True)
-
-    # Thêm phần Lợi nhuận tích lũy của danh mục (SGD - Sharpe)
+    
+    # Tính lợi nhuận tích lũy của danh mục (SGD - Sharpe)
     processed_data['weighted_return_sharpe'] = processed_data['daily_return'] * processed_data['symbol'].map(
         dict(zip(expected_returns.index, optimal_weights_sgd_bsharp))
     )
@@ -372,342 +506,69 @@ elif page == "Portfolio Optimization (SGD - Sharpe)":
     
     st.subheader("Lợi nhuận tích lũy của danh mục (SGD - Sharpe)")
     st.line_chart(portfolio_daily_return_sharpe.set_index('time')['cumulative_portfolio_return'])
-
-###########################################
-# Trang 5: Comparison with VN-Index (SLSQP)
-###########################################
-elif page == "Comparison with VN-Index (SLSQP)":
-    st.header("So sánh danh mục đầu tư với VN-Index (SLSQP)")
-    try:
-        processed_data = pd.read_csv("processed_stock_data.csv")
-        processed_data['time'] = pd.to_datetime(processed_data['time'])
-        st.success("Đã tải dữ liệu xử lý thành công.")
-    except FileNotFoundError:
-        st.error("File 'processed_stock_data.csv' không tồn tại. Vui lòng Fetch Stock Data trước.")
-        st.stop()
     
-    # Tối ưu danh mục bằng SLSQP
-    expected_returns = processed_data.groupby('symbol')['daily_return'].mean()
-    pivot_returns = processed_data.pivot(index='time', columns='symbol', values='daily_return')
-    cov_matrix = pivot_returns.cov()
-    
-    def objective(weights, expected_returns, cov_matrix):
-        return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-    
-    constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
-    bounds = tuple((0, 1) for _ in range(len(expected_returns)))
-    total_expected_return = expected_returns.sum()
-    init_weights = expected_returns / total_expected_return
-    result = minimize(objective, init_weights, args=(expected_returns, cov_matrix),
-                      method='SLSQP', bounds=bounds, constraints=constraints)
-    optimal_weights_slsqp = result.x
-    
-    # Tính lợi nhuận danh mục
-    processed_data['weighted_return_slsqp'] = processed_data['daily_return'] * processed_data['symbol'].map(
-        dict(zip(expected_returns.index, optimal_weights_slsqp))
-    )
-    portfolio_daily_return_slsqp = processed_data.groupby('time')['weighted_return_slsqp'].sum().reset_index()
-    portfolio_daily_return_slsqp.rename(columns={'weighted_return_slsqp': 'daily_return'}, inplace=True)
-    portfolio_daily_return_slsqp['cumulative_portfolio_return'] = (1 + portfolio_daily_return_slsqp['daily_return']).cumprod()
-    
-    # Tải VN-Index
-    try:
-        vnindex_data = pd.read_csv("vnindex_data.csv")
-        vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
-        st.success("Đã tải dữ liệu VN-Index từ file 'vnindex_data.csv'.")
-    except:
-        st.warning("Không tìm thấy file 'vnindex_data.csv'. Đang tải dữ liệu VN-Index...")
+    # Expander chứa phần so sánh với VN-Index cho SGD - Sharpe
+    with st.expander("So sánh với VN-Index"):
         try:
-            stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
-            vnindex_data = stock.quote.history(start='2020-01-01', end='2024-12-31')
+            vnindex_data = pd.read_csv("vnindex_data.csv")
             vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
-            vnindex_data.to_csv("vnindex_data.csv", index=False)
-            st.success("Đã lưu dữ liệu VN-Index vào file 'vnindex_data.csv'.")
-        except Exception as e:
-            st.error(f"Lỗi khi tải dữ liệu VN-Index: {e}")
-            st.stop()
-    
-    # Tính lợi nhuận VN-Index
-    vnindex_data['market_return'] = vnindex_data['close'].pct_change()
-    vnindex_data['cumulative_daily_return'] = (1 + vnindex_data['market_return']).cumprod()
-    
-    # Gộp dữ liệu
-    portfolio_daily_return_slsqp['time'] = pd.to_datetime(portfolio_daily_return_slsqp['time'])
-    comparison_slsqp = pd.merge(portfolio_daily_return_slsqp, vnindex_data[['time', 'cumulative_daily_return']],
-                                on='time', how='inner')
-    comparison_slsqp.rename(columns={
-        'cumulative_portfolio_return': 'Portfolio Return (SLSQP)',
-        'cumulative_daily_return': 'VN-Index Return'
-    }, inplace=True)
-    
-    st.subheader("Bảng so sánh lợi nhuận (10 dòng cuối) - SLSQP vs VN-Index")
-    st.dataframe(comparison_slsqp[['time', 'Portfolio Return (SLSQP)', 'VN-Index Return']].tail(10))
-    
-    fig_comp_slsqp = go.Figure()
-    fig_comp_slsqp.add_trace(go.Scatter(
-        x=comparison_slsqp['time'],
-        y=comparison_slsqp['Portfolio Return (SLSQP)'],
-        mode='lines',
-        name='Portfolio Return (SLSQP)',
-        line=dict(color='blue', width=2),
-        hovertemplate='Date: %{x}<br>Portfolio Return (SLSQP): %{y:.2%}<extra></extra>'
-    ))
-    fig_comp_slsqp.add_trace(go.Scatter(
-        x=comparison_slsqp['time'],
-        y=comparison_slsqp['VN-Index Return'],
-        mode='lines',
-        name='VN-Index Return',
-        line=dict(color='red', width=2),
-        hovertemplate='Date: %{x}<br>VN-Index Return: %{y:.2%}<extra></extra>'
-    ))
-    fig_comp_slsqp.update_layout(
-        title="So sánh lợi nhuận danh mục (SLSQP) vs VN-Index",
-        xaxis_title="Thời gian",
-        yaxis_title="Lợi nhuận tích lũy",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_comp_slsqp, use_container_width=True)
-    
-    comparison_slsqp.to_csv("portfolio_vs_vnindex_comparison_slsqp.csv", index=False)
-    st.write("Comparison saved to 'portfolio_vs_vnindex_comparison_slsqp.csv'.")
-
-###########################################
-# Trang 6: Comparison with VN-Index (SGD)
-###########################################
-elif page == "Comparison with VN-Index (SGD)":
-    st.header("So sánh danh mục đầu tư với VN-Index (SGD)")
-    try:
-        processed_data = pd.read_csv("processed_stock_data.csv")
-        processed_data['time'] = pd.to_datetime(processed_data['time'])
-        st.success("Đã tải dữ liệu xử lý thành công.")
-    except FileNotFoundError:
-        st.error("File 'processed_stock_data.csv' không tồn tại. Vui lòng Fetch Stock Data trước.")
-        st.stop()
-    
-    expected_returns = processed_data.groupby('symbol')['daily_return'].mean()
-    pivot_returns = processed_data.pivot(index='time', columns='symbol', values='daily_return')
-    cov_matrix = pivot_returns.cov()
-    
-    def portfolio_volatility(weights, cov_matrix):
-        return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-    
-    def return_based_weights(expected_returns):
-        return expected_returns / expected_returns.sum()
-    
-    def sgd_optimization(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000):
-        weights = return_based_weights(expected_returns)
-        for epoch in range(epochs):
-            grad = np.dot(cov_matrix, weights) / portfolio_volatility(weights, cov_matrix)
-            weights -= learning_rate * grad
-            weights = np.maximum(weights, 0)
-            weights /= np.sum(weights)
-        return weights
-    
-    optimal_weights_sgd = sgd_optimization(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000)
-    
-    processed_data['weighted_return_sgd'] = processed_data['daily_return'] * processed_data['symbol'].map(
-        dict(zip(expected_returns.index, optimal_weights_sgd))
-    )
-    portfolio_daily_return_sgd = processed_data.groupby('time')['weighted_return_sgd'].sum().reset_index()
-    portfolio_daily_return_sgd.rename(columns={'weighted_return_sgd': 'daily_return'}, inplace=True)
-    portfolio_daily_return_sgd['cumulative_portfolio_return'] = (1 + portfolio_daily_return_sgd['daily_return']).cumprod()
-    
-    try:
-        vnindex_data = pd.read_csv("vnindex_data.csv")
-        vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
-        st.success("VN-Index data loaded successfully from 'vnindex_data.csv'.")
-    except:
-        st.warning("Không tìm thấy file 'vnindex_data.csv'. Đang tải dữ liệu VN-Index...")
-        try:
-            stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
-            vnindex_data = stock.quote.history(start='2020-01-01', end='2024-12-31')
-            vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
-            vnindex_data.to_csv("vnindex_data.csv", index=False)
-            st.success("VN-Index data saved successfully.")
-        except Exception as e:
-            st.error(f"Lỗi khi tải dữ liệu VN-Index: {e}")
-            st.stop()
-    
-    vnindex_data['market_return'] = vnindex_data['close'].pct_change()
-    vnindex_data['cumulative_daily_return'] = (1 + vnindex_data['market_return']).cumprod()
-    
-    portfolio_daily_return_sgd['time'] = pd.to_datetime(portfolio_daily_return_sgd['time'])
-    comparison_sgd = pd.merge(
-        portfolio_daily_return_sgd,
-        vnindex_data[['time', 'cumulative_daily_return']],
-        on='time',
-        how='inner'
-    )
-    comparison_sgd.rename(columns={
-        'cumulative_portfolio_return': 'Portfolio Return (SGD)',
-        'cumulative_daily_return': 'VN-Index Return'
-    }, inplace=True)
-    
-    st.subheader("Bảng so sánh lợi nhuận (SGD) vs VN-Index (10 dòng cuối)")
-    st.dataframe(comparison_sgd[['time', 'Portfolio Return (SGD)', 'VN-Index Return']].tail(10))
-    
-    fig_comp_sgd = go.Figure()
-    fig_comp_sgd.add_trace(go.Scatter(
-        x=comparison_sgd['time'],
-        y=comparison_sgd['Portfolio Return (SGD)'],
-        mode='lines',
-        name='Portfolio Return (SGD)',
-        line=dict(color='green', width=2),
-        hovertemplate='Date: %{x}<br>Portfolio Return (SGD): %{y:.2%}<extra></extra>'
-    ))
-    fig_comp_sgd.add_trace(go.Scatter(
-        x=comparison_sgd['time'],
-        y=comparison_sgd['VN-Index Return'],
-        mode='lines',
-        name='VN-Index Return',
-        line=dict(color='red', width=2),
-        hovertemplate='Date: %{x}<br>VN-Index Return: %{y:.2%}<extra></extra>'
-    ))
-    fig_comp_sgd.update_layout(
-        title="Comparison of Portfolio Return (SGD) vs VN-Index Return",
-        xaxis_title="Time",
-        yaxis_title="Cumulative Return",
-        template="plotly_white",
-        hovermode="x unified",
-        xaxis=dict(showgrid=True),
-        yaxis=dict(showgrid=True)
-    )
-    st.plotly_chart(fig_comp_sgd, use_container_width=True)
-    comparison_sgd.to_csv("portfolio_vs_vnindex_comparison_sgd.csv", index=False)
-    st.write("Comparison saved to 'portfolio_vs_vnindex_comparison_sgd.csv'.")
-
-###########################################
-# Trang 7: Comparison with VN-Index (SGD - Sharpe)
-###########################################
-elif page == "Comparison with VN-Index (SGD - Sharpe)":
-    st.header("Comparison of Portfolio (SGD - Sharpe) vs. VN-Index Returns")
-    
-    # Tải dữ liệu đã xử lý
-    try:
-        processed_data = pd.read_csv("processed_stock_data.csv")
-        processed_data['time'] = pd.to_datetime(processed_data['time'])
-        st.success("Processed data loaded successfully.")
-    except Exception:
-        st.error("File 'processed_stock_data.csv' not found. Please go to 'Fetch Stock Data' page to load data.")
-        st.stop()
-    
-    # Tính toán kỳ vọng lợi nhuận và ma trận hiệp phương sai
-    expected_returns = processed_data.groupby('symbol')['daily_return'].mean()
-    cov_matrix = processed_data.pivot(index='time', columns='symbol', values='daily_return').cov()
-    
-    # Hàm tối ưu hóa SGD cho Sharpe Ratio
-    def sgd_portfolio_optimization(expected_returns, cov_matrix, learning_rate=0.01, epochs=2000, tolerance=1e-6):
-        weights = expected_returns / expected_returns.sum()
-        weights = weights.values
-        previous_weights = weights.copy()
-        best_sharpe_ratio = -np.inf
-        best_weights = weights.copy()
-        for epoch in range(epochs):
-            portfolio_return = np.dot(weights, expected_returns)
-            portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-            sharpe_ratio = portfolio_return / portfolio_volatility if portfolio_volatility != 0 else 0
-            if sharpe_ratio > best_sharpe_ratio:
-                best_sharpe_ratio = sharpe_ratio
-                best_weights = weights.copy()
-            grad = 2 * np.dot(cov_matrix, weights)
-            weights -= learning_rate * grad
-            weights = np.maximum(weights, 0)
-            weights /= np.sum(weights)
-            if np.allclose(weights, previous_weights, atol=tolerance):
-                st.write(f"Convergence reached after {epoch + 1} epochs")
-                break
-            previous_weights = weights.copy()
-        return best_weights
-    
-    # Tính toán trọng số tối ưu
-    optimal_weights_sgd_bsharp = sgd_portfolio_optimization(expected_returns, cov_matrix)
-    
-    # Tính toán lợi nhuận danh mục
-    processed_data['weighted_return_sharpe'] = processed_data['daily_return'] * processed_data['symbol'].map(
-        dict(zip(expected_returns.index, optimal_weights_sgd_bsharp))
-    )
-    portfolio_daily_return_sharpe = processed_data.groupby('time')['weighted_return_sharpe'].sum().reset_index()
-    portfolio_daily_return_sharpe.rename(columns={'weighted_return_sharpe': 'daily_return'}, inplace=True)
-    portfolio_daily_return_sharpe['cumulative_portfolio_return'] = (1 + portfolio_daily_return_sharpe['daily_return']).cumprod()
-    portfolio_daily_return_sharpe['time'] = pd.to_datetime(portfolio_daily_return_sharpe['time'])
-    
-    # Tải dữ liệu VN-Index
-    try:
-        vnindex_data = pd.read_csv("vnindex_data.csv")
-        vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
-        st.success("VN-Index data loaded successfully.")
-    except:
-        st.warning("VN-Index data not found. Attempting to load it...")
-        try:
-            stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
-            vnindex_data = stock.quote.history(start='2020-01-01', end='2024-12-31')
-            vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
-            vnindex_data.to_csv("vnindex_data.csv", index=False)
-            st.success("VN-Index data saved successfully.")
-        except Exception as e:
-            st.error(f"Error loading VN-Index data: {e}")
-            st.stop()
-    
-    # Tính toán lợi nhuận tích lũy của VN-Index
-    vnindex_data['market_return'] = vnindex_data['close'].pct_change()
-    vnindex_data['cumulative_daily_return'] = (1 + vnindex_data['market_return']).cumprod()
-    
-    # Gộp dữ liệu danh mục và VN-Index
-    comparison_sharpe = pd.merge(
-        portfolio_daily_return_sharpe,
-        vnindex_data[['time', 'cumulative_daily_return']],
-        on='time',
-        how='inner'
-    )
-    comparison_sharpe.rename(columns={
-        'cumulative_portfolio_return': 'Portfolio Return (Sharpe)',
-        'cumulative_daily_return': 'VN-Index Return'
-    }, inplace=True)
-    
-    # Hiển thị bảng so sánh (10 dòng cuối)
-    st.subheader("Comparison Table (Last 10 rows)")
-    st.dataframe(comparison_sharpe[['time', 'Portfolio Return (Sharpe)', 'VN-Index Return']].tail(10))
-    
-    # Vẽ biểu đồ so sánh
-    fig_comp_sharpe = go.Figure()
-    fig_comp_sharpe.add_trace(go.Scatter(
-        x=comparison_sharpe['time'],
-        y=comparison_sharpe['Portfolio Return (Sharpe)'],
-        mode='lines',
-        name='Portfolio Return (Sharpe)',
-        line=dict(color='orange', width=2),
-        hovertemplate='Date: %{x}<br>Portfolio Return (Sharpe): %{y:.2%}<extra></extra>'
-    ))
-    fig_comp_sharpe.add_trace(go.Scatter(
-        x=comparison_sharpe['time'],
-        y=comparison_sharpe['VN-Index Return'],
-        mode='lines',
-        name='VN-Index Return',
-        line=dict(color='red', width=2),
-        hovertemplate='Date: %{x}<br>VN-Index Return: %{y:.2%}<extra></extra>'
-    ))
-    fig_comp_sharpe.update_layout(
-        title="Comparison of Portfolio Return (Sharpe Optimization) vs VN-Index Return",
-        xaxis_title="Time",
-        yaxis_title="Cumulative Return",
-        template="plotly_white",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        ),
-        hovermode="x unified",
-        xaxis=dict(showgrid=True),
-        yaxis=dict(showgrid=True)
-    )
-    st.plotly_chart(fig_comp_sharpe, use_container_width=True)
-    
-    # Lưu kết quả so sánh vào file CSV
-    comparison_sharpe.to_csv("portfolio_vs_vnindex_comparison_sharpe.csv", index=False)
-    st.write("Comparison saved to 'portfolio_vs_vnindex_comparison_sharpe.csv'.")
-
+            st.success("VN-Index data loaded successfully.")
+        except:
+            st.warning("VN-Index data not found. Attempting to load it...")
+            try:
+                stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
+                vnindex_data = stock.quote.history(start='2020-01-01', end='2024-12-31')
+                vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
+                vnindex_data.to_csv("vnindex_data.csv", index=False)
+                st.success("VN-Index data saved successfully.")
+            except Exception as e:
+                st.error(f"Error loading VN-Index data: {e}")
+                st.stop()
+        
+        vnindex_data['market_return'] = vnindex_data['close'].pct_change()
+        vnindex_data['cumulative_daily_return'] = (1 + vnindex_data['market_return']).cumprod()
+        
+        comparison_sharpe = pd.merge(
+            portfolio_daily_return_sharpe,
+            vnindex_data[['time', 'cumulative_daily_return']],
+            on='time',
+            how='inner'
+        )
+        comparison_sharpe.rename(columns={
+            'cumulative_portfolio_return': 'Portfolio Return (Sharpe)',
+            'cumulative_daily_return': 'VN-Index Return'
+        }, inplace=True)
+        
+        st.subheader("Comparison Table (Last 10 rows)")
+        st.dataframe(comparison_sharpe[['time', 'Portfolio Return (Sharpe)', 'VN-Index Return']].tail(10))
+        
+        fig_comp_sharpe = go.Figure()
+        fig_comp_sharpe.add_trace(go.Scatter(
+            x=comparison_sharpe['time'],
+            y=comparison_sharpe['Portfolio Return (Sharpe)'],
+            mode='lines',
+            name='Portfolio Return (Sharpe)',
+            line=dict(color='orange', width=2),
+            hovertemplate='Date: %{x}<br>Portfolio Return (Sharpe): %{y:.2%}<extra></extra>'
+        ))
+        fig_comp_sharpe.add_trace(go.Scatter(
+            x=comparison_sharpe['time'],
+            y=comparison_sharpe['VN-Index Return'],
+            mode='lines',
+            name='VN-Index Return',
+            line=dict(color='red', width=2),
+            hovertemplate='Date: %{x}<br>VN-Index Return: %{y:.2%}<extra></extra>'
+        ))
+        fig_comp_sharpe.update_layout(
+            title="Comparison of Portfolio Return (Sharpe Optimization) vs VN-Index Return",
+            xaxis_title="Time",
+            yaxis_title="Cumulative Return",
+            template="plotly_white",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_comp_sharpe, use_container_width=True)
+        comparison_sharpe.to_csv("portfolio_vs_vnindex_comparison_sharpe.csv", index=False)
+        st.write("Comparison saved to 'portfolio_vs_vnindex_comparison_sharpe.csv'.")
 ###########################################
 # Trang 8: Data Visualization
 ###########################################
@@ -809,79 +670,80 @@ elif page == "Company Information":
                 company = Vnstock().stock(symbol=symbol, source='TCBS').company
                 
                 # Hồ sơ công ty
-                st.write("**Hồ sơ công ty:**")
-                profile = company.profile()
-                if isinstance(profile, pd.DataFrame):
-                    st.dataframe(profile)
-                else:
-                    st.write(profile)  # Display raw output if not a DataFrame
+                with st.expander("**Hồ sơ công ty:**"):
+                    profile = company.profile()
+                    if isinstance(profile, pd.DataFrame):
+                        st.dataframe(profile)
+                    else:
+                        st.write(profile)
                 
                 # Cổ đông
-                st.write("**Cổ đông:**")
-                shareholders = company.shareholders()
-                if isinstance(shareholders, pd.DataFrame):
-                    st.dataframe(shareholders)
-                else:
-                    st.write(shareholders)
+                with st.expander("**Cổ đông:**"):
+                    shareholders = company.shareholders()
+                    if isinstance(shareholders, pd.DataFrame):
+                        st.dataframe(shareholders)
+                    else:
+                        st.write(shareholders)
                 
                 # Giao dịch nội bộ
-                st.write("**Giao dịch nội bộ:**")
-                insider_deals = company.insider_deals()
-                if isinstance(insider_deals, pd.DataFrame):
-                    st.dataframe(insider_deals)
-                else:
-                    st.write(insider_deals)
+                with st.expander("**Giao dịch nội bộ:**"):
+                    insider_deals = company.insider_deals()
+                    if isinstance(insider_deals, pd.DataFrame):
+                        st.dataframe(insider_deals)
+                    else:
+                        st.write(insider_deals)
                 
                 # Công ty con
-                st.write("**Công ty con:**")
-                subsidiaries = company.subsidiaries()
-                if isinstance(subsidiaries, pd.DataFrame):
-                    st.dataframe(subsidiaries)
-                else:
-                    st.write(subsidiaries)
+                with st.expander("**Công ty con:**"):
+                    subsidiaries = company.subsidiaries()
+                    if isinstance(subsidiaries, pd.DataFrame):
+                        st.dataframe(subsidiaries)
+                    else:
+                        st.write(subsidiaries)
                 
                 # Ban điều hành
-                st.write("**Ban điều hành:**")
-                officers = company.officers()
-                if isinstance(officers, pd.DataFrame):
-                    st.dataframe(officers)
-                else:
-                    st.write(officers)
+                with st.expander("**Ban điều hành:**"):
+                    officers = company.officers()
+                    if isinstance(officers, pd.DataFrame):
+                        st.dataframe(officers)
+                    else:
+                        st.write(officers)
                 
                 # Sự kiện
-                st.write("**Sự kiện:**")
-                events = company.events()
-                if isinstance(events, pd.DataFrame):
-                    st.dataframe(events)
-                else:
-                    st.write(events)
+                with st.expander("**Sự kiện:**"):
+                    events = company.events()
+                    if isinstance(events, pd.DataFrame):
+                        st.dataframe(events)
+                    else:
+                        st.write(events)
                 
                 # Tin tức
-                st.write("**Tin tức:**")
-                news = company.news()
-                if isinstance(news, list) and all(isinstance(item, dict) for item in news):
-                    for item in news:
-                        st.write(f"- {item.get('title', 'N/A')} ({item.get('date', 'N/A')})")
-                        st.write(item.get('summary', 'No summary available'))
-                        url = item.get('url', None)
-                        if url:
-                            st.write(f"[Đọc thêm]({url})")
-                        else:
-                            st.write("No URL available")
-                else:
-                    st.write("Tin tức không khả dụng hoặc định dạng không đúng:")
-                    st.write(news)  # Display raw output for debugging
+                with st.expander("**Tin tức:**"):
+                    news = company.news()
+                    if isinstance(news, list) and all(isinstance(item, dict) for item in news):
+                        for item in news:
+                            st.write(f"- {item.get('title', 'N/A')} ({item.get('date', 'N/A')})")
+                            st.write(item.get('summary', 'No summary available'))
+                            url = item.get('url', None)
+                            if url:
+                                st.write(f"[Đọc thêm]({url})")
+                            else:
+                                st.write("No URL available")
+                    else:
+                        st.write("Tin tức không khả dụng hoặc định dạng không đúng:")
+                        st.write(news)
                 
                 # Cổ tức
-                st.write("**Cổ tức:**")
-                dividends = company.dividends()
-                if isinstance(dividends, pd.DataFrame):
-                    st.dataframe(dividends)
-                else:
-                    st.write(dividends)
+                with st.expander("**Cổ tức:**"):
+                    dividends = company.dividends()
+                    if isinstance(dividends, pd.DataFrame):
+                        st.dataframe(dividends)
+                    else:
+                        st.write(dividends)
             
             except Exception as e:
                 st.error(f"Lỗi khi tải thông tin cho mã {symbol}: {e}")
+
 ###########################################
 # Trang 10: Financial Statements
 ###########################################
