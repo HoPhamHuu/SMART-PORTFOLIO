@@ -4,4 +4,4 @@ numpy
 vnstock
 scipy
 plotly
-date
+datetime
