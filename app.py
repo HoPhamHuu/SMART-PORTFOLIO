@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,30 +9,35 @@ from plotly.subplots import make_subplots
 import plotly.express as px
 import plotly.figure_factory as ff
 import random
-
+import streamlit as st
+import pandas as pd
+import datetime
 # Hàm tạo màu ngẫu nhiên
 def random_color():
     return "#%06x" % random.randint(0, 0xFFFFFF)
 
+
 # Cấu hình giao diện trang web
-st.set_page_config(page_title="Portfolio Optimization Dashboard", layout="wide")
+st.set_page_config(page_title="Portfolio Optimization Dashboard 📈", layout="wide")
 st.title("Portfolio Optimization Dashboard")
 st.write("Ứng dụng tích hợp quy trình: tải dữ liệu cổ phiếu, xử lý, tối ưu hóa danh mục đầu tư (SLSQP, SGD, SGD - Sharpe), so sánh với VN-Index và trực quan hóa dữ liệu.")
 
-pages = [
-    "Fetch Stock Data",
-    "Portfolio Optimization (SLSQP)",
-    "Portfolio Optimization (SGD)",
-    "Portfolio Optimization (SGD - Sharpe)",
-    "Data Visualization",
-    "Company Information",
-    "Financial Statements"  # New page added
-]
-page = st.sidebar.radio("Chọn trang", pages)
+# Tạo các tab ngang cho các trang
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    "Tải dữ liệu cổ phiếu",
+    "Tối ưu danh mục (SLSQP)",
+    "Tối ưu danh mục (SGD)",
+    "Tối ưu danh mục (SGD - Sharpe)",
+    "Trực quan hóa dữ liệu",
+    "Thông tin công ty",
+    "Báo cáo tài chính",
+    "Phân tích kỹ thuật"
+])
+
 ###########################################
-# Trang 1: Fetch Stock Data & Process
+# Tab 1: Tải dữ liệu cổ phiếu
 ###########################################
-if page == "Fetch Stock Data":
+with tab1:
     st.header("Nhập mã cổ phiếu và tải dữ liệu")
     st.write("Nhập các mã cổ phiếu (phân cách bởi dấu phẩy, ví dụ: ACB, VCB):")
     symbols_input = st.text_input("Mã cổ phiếu")
@@ -41,7 +47,7 @@ if page == "Fetch Stock Data":
         if not symbols:
             st.error("Danh sách mã cổ phiếu không được để trống!")
         else:
-            # Save symbols to session state
+            # Lưu symbols vào session state
             st.session_state['symbols'] = symbols
             all_data = []
             for symbol in symbols:
@@ -75,17 +81,16 @@ if page == "Fetch Stock Data":
                 st.error("Không có dữ liệu hợp lệ để xử lý!")
 
 ###########################################
-# Trang 2: Portfolio Optimization (SLSQP)
+# Tab 2: Tối ưu danh mục (SLSQP)
 ###########################################
-elif page == "Portfolio Optimization (SLSQP)":
-    st.header("Portfolio Optimization (SLSQP)")
-    st.markdown("## Phần 1: Tối ưu hóa danh mục đầu tư (SLSQP)")
+with tab2:
+    st.header("Tối ưu danh mục (SLSQP)")
     try:
         processed_data = pd.read_csv("processed_stock_data.csv")
         processed_data['time'] = pd.to_datetime(processed_data['time'])
         st.success("Đã tải dữ liệu xử lý thành công.")
     except FileNotFoundError:
-        st.error("File 'processed_stock_data.csv' không tồn tại. Vui lòng Fetch Stock Data trước.")
+        st.error("File 'processed_stock_data.csv' không tồn tại. Vui lòng tải dữ liệu ở tab 'Tải dữ liệu cổ phiếu' trước.")
         st.stop()
     
     # Tính toán kỳ vọng lợi nhuận và ma trận hiệp phương sai
@@ -106,46 +111,53 @@ elif page == "Portfolio Optimization (SLSQP)":
 
     st.subheader("Trọng số tối ưu (SLSQP):")
     for i, symbol in enumerate(expected_returns.index):
-        st.write(f"Stock: {symbol}, Optimal Weight: {optimal_weights_slsqp[i]:.4f}")
+        st.write(f"Cổ phiếu: {symbol}, Trọng số tối ưu: {optimal_weights_slsqp[i]:.4f}")
     
-    # Biểu đồ trực quan: Optimal Portfolio Weights (Pie) & (Bar)
+    # Biểu đồ trực quan: Pie & Bar
     portfolio_data_slsqp = pd.DataFrame({
-        'Stock': expected_returns.index,
-        'Optimal Weight': optimal_weights_slsqp
+        'Cổ phiếu': expected_returns.index,
+        'Trọng số tối ưu': optimal_weights_slsqp
     })
+    portfolio_data_filtered = portfolio_data_slsqp[portfolio_data_slsqp['Trọng số tối ưu'] > 0]
+
     fig_slsqp = make_subplots(
         rows=1, cols=2,
-        subplot_titles=['Optimal Portfolio Weights (Pie)', 'Optimal Portfolio Weights (Bar)'],
+        subplot_titles=['Trọng số tối ưu (Pie)', 'Trọng số tối ưu (Bar)'],
         specs=[[{'type': 'pie'}, {'type': 'bar'}]]
     )
+
+    # Vẽ biểu đồ tròn với dữ liệu đã lọc
     fig_slsqp.add_trace(
         go.Pie(
-            labels=portfolio_data_slsqp['Stock'],
-            values=portfolio_data_slsqp['Optimal Weight'],
+            labels=portfolio_data_filtered['Cổ phiếu'],
+            values=portfolio_data_filtered['Trọng số tối ưu'],
             hole=0.3,
             textinfo='percent+label',
             textfont_size=14,
             marker=dict(
-                colors=['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15C', '#19D895', '#F2A900'],
+                colors=[random_color() for _ in range(len(portfolio_data_filtered))],
                 line=dict(color='#000000', width=2)
             ),
             hoverinfo='label+percent'
         ),
         row=1, col=1
     )
+
+    # Vẽ biểu đồ cột với dữ liệu đã lọc (nếu cần)
     fig_slsqp.add_trace(
         go.Bar(
-            x=portfolio_data_slsqp['Stock'],
-            y=portfolio_data_slsqp['Optimal Weight'],
+            x=portfolio_data_filtered['Cổ phiếu'],
+            y=portfolio_data_filtered['Trọng số tối ưu'],
             marker=dict(
-                color=['#FFA07A', '#7B68EE', '#98FB98', '#D2691E', '#6495ED', '#FF69B4', '#2E8B57'],
+                color=[random_color() for _ in range(len(portfolio_data_filtered))],
                 line=dict(color='#000000', width=2)
             ),
         ),
         row=1, col=2
     )
+
     fig_slsqp.update_layout(
-        title="Optimal Portfolio Weights (SLSQP) Comparison",
+        title="So sánh trọng số tối ưu (SLSQP)",
         title_x=0.5,
         height=500,
         width=1000,
@@ -155,7 +167,7 @@ elif page == "Portfolio Optimization (SLSQP)":
     )
     st.plotly_chart(fig_slsqp, use_container_width=True)
     
-    # Tính lợi nhuận tích lũy của danh mục (SLSQP)
+    # Tính lợi nhuận tích lũy của danh mục
     processed_data['weighted_return_slsqp'] = processed_data['daily_return'] * processed_data['symbol'].map(
         dict(zip(expected_returns.index, optimal_weights_slsqp))
     )
@@ -166,7 +178,7 @@ elif page == "Portfolio Optimization (SLSQP)":
     st.subheader("Lợi nhuận tích lũy của danh mục (SLSQP)")
     st.line_chart(portfolio_daily_return_slsqp.set_index('time')['cumulative_portfolio_return'])
     
-    # Expander chứa phần so sánh với VN-Index
+    # So sánh với VN-Index
     with st.expander("So sánh với VN-Index"):
         try:
             vnindex_data = pd.read_csv("vnindex_data.csv")
@@ -194,29 +206,29 @@ elif page == "Portfolio Optimization (SLSQP)":
             how='inner'
         )
         comparison_slsqp.rename(columns={
-            'cumulative_portfolio_return': 'Portfolio Return (SLSQP)',
-            'cumulative_daily_return': 'VN-Index Return'
+            'cumulative_portfolio_return': 'Lợi nhuận danh mục (SLSQP)',
+            'cumulative_daily_return': 'Lợi nhuận VN-Index'
         }, inplace=True)
         
-        st.subheader("Bảng so sánh lợi nhuận (10 dòng cuối) - SLSQP vs VN-Index")
-        st.dataframe(comparison_slsqp[['time', 'Portfolio Return (SLSQP)', 'VN-Index Return']].tail(10))
+        st.subheader("Bảng so sánh lợi nhuận (10 dòng cuối)")
+        st.dataframe(comparison_slsqp[['time', 'Lợi nhuận danh mục (SLSQP)', 'Lợi nhuận VN-Index']].tail(10))
         
         fig_comp_slsqp = go.Figure()
         fig_comp_slsqp.add_trace(go.Scatter(
             x=comparison_slsqp['time'],
-            y=comparison_slsqp['Portfolio Return (SLSQP)'],
+            y=comparison_slsqp['Lợi nhuận danh mục (SLSQP)'],
             mode='lines',
-            name='Portfolio Return (SLSQP)',
+            name='Lợi nhuận danh mục (SLSQP)',
             line=dict(color='blue', width=2),
-            hovertemplate='Date: %{x}<br>Portfolio Return (SLSQP): %{y:.2%}<extra></extra>'
+            hovertemplate='Ngày: %{x}<br>Lợi nhuận danh mục (SLSQP): %{y:.2%}<extra></extra>'
         ))
         fig_comp_slsqp.add_trace(go.Scatter(
             x=comparison_slsqp['time'],
-            y=comparison_slsqp['VN-Index Return'],
+            y=comparison_slsqp['Lợi nhuận VN-Index'],
             mode='lines',
-            name='VN-Index Return',
+            name='Lợi nhuận VN-Index',
             line=dict(color='red', width=2),
-            hovertemplate='Date: %{x}<br>VN-Index Return: %{y:.2%}<extra></extra>'
+            hovertemplate='Ngày: %{x}<br>Lợi nhuận VN-Index: %{y:.2%}<extra></extra>'
         ))
         fig_comp_slsqp.update_layout(
             title="So sánh lợi nhuận danh mục (SLSQP) vs VN-Index",
@@ -226,20 +238,19 @@ elif page == "Portfolio Optimization (SLSQP)":
         )
         st.plotly_chart(fig_comp_slsqp, use_container_width=True)
         comparison_slsqp.to_csv("portfolio_vs_vnindex_comparison_slsqp.csv", index=False)
-        st.write("Comparison saved to 'portfolio_vs_vnindex_comparison_slsqp.csv'.")
+        st.write("Dữ liệu so sánh đã được lưu vào 'portfolio_vs_vnindex_comparison_slsqp.csv'.")
 
 ###########################################
-# Trang 3: Portfolio Optimization (SGD)
+# Tab 3: Tối ưu danh mục (SGD)
 ###########################################
-elif page == "Portfolio Optimization (SGD)":
-    st.header("Portfolio Optimization (SGD)")
-    st.markdown("## Phần 2: Tối ưu hóa danh mục đầu tư (SGD)")
+with tab3:
+    st.header("Tối ưu danh mục (SGD)")
     try:
         processed_data = pd.read_csv("processed_stock_data.csv")
         processed_data['time'] = pd.to_datetime(processed_data['time'])
         st.success("Đã tải dữ liệu xử lý từ file 'processed_stock_data.csv'.")
     except Exception:
-        st.error("Không tìm thấy file 'processed_stock_data.csv'. Vui lòng chuyển đến trang 'Fetch Stock Data' để tải dữ liệu.")
+        st.error("Không tìm thấy file 'processed_stock_data.csv'. Vui lòng tải dữ liệu ở tab 'Tải dữ liệu cổ phiếu'.")
         st.stop()
     
     expected_returns = processed_data.groupby('symbol')['daily_return'].mean()
@@ -263,50 +274,55 @@ elif page == "Portfolio Optimization (SGD)":
     
     optimal_weights_sgd = sgd_optimization(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000)
     
-    st.subheader("Optimal Portfolio Weights (SGD):")
+    st.subheader("Trọng số tối ưu (SGD):")
     for i, symbol in enumerate(expected_returns.index):
-        st.write(f"Stock: {symbol}, Optimal Weight: {optimal_weights_sgd[i]:.4f}")
+        st.write(f"Cổ phiếu: {symbol}, Trọng số tối ưu: {optimal_weights_sgd[i]:.4f}")
     
-    # Biểu đồ trực quan: Pie & Bar cho SGD
+    # Biểu đồ trực quan: Pie & Bar
     portfolio_data_sgd = pd.DataFrame({
-        'Stock': expected_returns.index,
-        'Optimal Weight': optimal_weights_sgd
+        'Cổ phiếu': expected_returns.index,
+        'Trọng số tối ưu': optimal_weights_sgd
     })
-    colors = ['#FFA07A', '#7B68EE', '#98FB98', '#D2691E', '#6495ED', '#FF69B4', '#2E8B57']
+    portfolio_data_filtered = portfolio_data_sgd[portfolio_data_sgd['Trọng số tối ưu'] > 0]
 
     fig_sgd = make_subplots(
         rows=1, cols=2,
-        subplot_titles=['Optimal Portfolio Weights (Pie)', 'Optimal Portfolio Weights (Bar)'],
+        subplot_titles=['Trọng số tối ưu (Pie)', 'Trọng số tối ưu (Bar)'],
         specs=[[{'type': 'pie'}, {'type': 'bar'}]]
     )
+
+    # Vẽ biểu đồ tròn với dữ liệu đã lọc
     fig_sgd.add_trace(
         go.Pie(
-            labels=portfolio_data_sgd['Stock'],
-            values=portfolio_data_sgd['Optimal Weight'],
+            labels=portfolio_data_filtered['Cổ phiếu'],
+            values=portfolio_data_filtered['Trọng số tối ưu'],
             hole=0.3,
             textinfo='percent+label',
             textfont_size=14,
             marker=dict(
-                colors=colors,
+                colors=[random_color() for _ in range(len(portfolio_data_filtered))],
                 line=dict(color='#000000', width=2)
             ),
-            hoverinfo='label+percent',
+            hoverinfo='label+percent'
         ),
         row=1, col=1
     )
+
+    # Vẽ biểu đồ cột với dữ liệu đã lọc
     fig_sgd.add_trace(
         go.Bar(
-            x=portfolio_data_sgd['Stock'],
-            y=portfolio_data_sgd['Optimal Weight'],
+            x=portfolio_data_filtered['Cổ phiếu'],
+            y=portfolio_data_filtered['Trọng số tối ưu'],
             marker=dict(
-                color=colors,
+                color=[random_color() for _ in range(len(portfolio_data_filtered))],
                 line=dict(color='#000000', width=2)
             ),
         ),
         row=1, col=2
     )
+
     fig_sgd.update_layout(
-        title='Optimal Portfolio Weights (SGD) Comparison',
+        title="So sánh trọng số tối ưu (SGD)",
         title_x=0.5,
         height=500,
         width=1000,
@@ -316,8 +332,7 @@ elif page == "Portfolio Optimization (SGD)":
     )
     st.plotly_chart(fig_sgd, use_container_width=True)
 
-    
-    # Tính lợi nhuận tích lũy của danh mục (SGD)
+    # Tính lợi nhuận tích lũy của danh mục
     processed_data['weighted_return_sgd'] = processed_data['daily_return'] * processed_data['symbol'].map(
         dict(zip(expected_returns.index, optimal_weights_sgd))
     )
@@ -328,12 +343,12 @@ elif page == "Portfolio Optimization (SGD)":
     st.subheader("Lợi nhuận tích lũy của danh mục (SGD)")
     st.line_chart(portfolio_daily_return_sgd.set_index('time')['cumulative_portfolio_return'])
     
-    # Expander chứa phần so sánh với VN-Index cho SGD
+    # So sánh với VN-Index
     with st.expander("So sánh với VN-Index"):
         try:
             vnindex_data = pd.read_csv("vnindex_data.csv")
             vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
-            st.success("VN-Index data loaded successfully from 'vnindex_data.csv'.")
+            st.success("Đã tải dữ liệu VN-Index từ file 'vnindex_data.csv'.")
         except:
             st.warning("Không tìm thấy file 'vnindex_data.csv'. Đang tải dữ liệu VN-Index...")
             try:
@@ -341,7 +356,7 @@ elif page == "Portfolio Optimization (SGD)":
                 vnindex_data = stock.quote.history(start='2020-01-01', end='2024-12-31')
                 vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
                 vnindex_data.to_csv("vnindex_data.csv", index=False)
-                st.success("VN-Index data saved successfully.")
+                st.success("Đã lưu dữ liệu VN-Index vào file 'vnindex_data.csv'.")
             except Exception as e:
                 st.error(f"Lỗi khi tải dữ liệu VN-Index: {e}")
                 st.stop()
@@ -356,60 +371,52 @@ elif page == "Portfolio Optimization (SGD)":
             how='inner'
         )
         comparison_sgd.rename(columns={
-            'cumulative_portfolio_return': 'Portfolio Return (SGD)',
-            'cumulative_daily_return': 'VN-Index Return'
+            'cumulative_portfolio_return': 'Lợi nhuận danh mục (SGD)',
+            'cumulative_daily_return': 'Lợi nhuận VN-Index'
         }, inplace=True)
         
-        st.subheader("Bảng so sánh lợi nhuận (10 dòng cuối) - SGD vs VN-Index")
-        st.dataframe(comparison_sgd[['time', 'Portfolio Return (SGD)', 'VN-Index Return']].tail(10))
+        st.subheader("Bảng so sánh lợi nhuận (10 dòng cuối)")
+        st.dataframe(comparison_sgd[['time', 'Lợi nhuận danh mục (SGD)', 'Lợi nhuận VN-Index']].tail(10))
         
         fig_comp_sgd = go.Figure()
         fig_comp_sgd.add_trace(go.Scatter(
             x=comparison_sgd['time'],
-            y=comparison_sgd['Portfolio Return (SGD)'],
+            y=comparison_sgd['Lợi nhuận danh mục (SGD)'],
             mode='lines',
-            name='Portfolio Return (SGD)',
+            name='Lợi nhuận danh mục (SGD)',
             line=dict(color='green', width=2),
-            hovertemplate='Date: %{x}<br>Portfolio Return (SGD): %{y:.2%}<extra></extra>'
+            hovertemplate='Ngày: %{x}<br>Lợi nhuận danh mục (SGD): %{y:.2%}<extra></extra>'
         ))
         fig_comp_sgd.add_trace(go.Scatter(
             x=comparison_sgd['time'],
-            y=comparison_sgd['VN-Index Return'],
+            y=comparison_sgd['Lợi nhuận VN-Index'],
             mode='lines',
-            name='VN-Index Return',
+            name='Lợi nhuận VN-Index',
             line=dict(color='red', width=2),
-            hovertemplate='Date: %{x}<br>VN-Index Return: %{y:.2%}<extra></extra>'
+            hovertemplate='Ngày: %{x}<br>Lợi nhuận VN-Index: %{y:.2%}<extra></extra>'
         ))
         fig_comp_sgd.update_layout(
-            title="Comparison of Portfolio Return (SGD) vs VN-Index Return",
-            xaxis_title="Time",
-            yaxis_title="Cumulative Return",
+            title="So sánh lợi nhuận danh mục (SGD) vs VN-Index",
+            xaxis_title="Thời gian",
+            yaxis_title="Lợi nhuận tích lũy",
             template="plotly_white",
             hovermode="x unified"
         )
         st.plotly_chart(fig_comp_sgd, use_container_width=True)
         comparison_sgd.to_csv("portfolio_vs_vnindex_comparison_sgd.csv", index=False)
-        st.write("Comparison saved to 'portfolio_vs_vnindex_comparison_sgd.csv'.")
+        st.write("Dữ liệu so sánh đã được lưu vào 'portfolio_vs_vnindex_comparison_sgd.csv'.")
 
 ###########################################
-# Trang 4: Portfolio Optimization (SGD - Sharpe)
+# Tab 4: Tối ưu danh mục (SGD - Sharpe)
 ###########################################
-elif page == "Portfolio Optimization (SGD - Sharpe)":
-    st.header("Portfolio Optimization (SGD - Sharpe)")
-    st.markdown("## Phần 3: Portfolio Optimization Using SGD with Sharpe Ratio Maximization")
+with tab4:
+    st.header("Tối ưu danh mục (SGD - Sharpe)")
     try:
         processed_data = pd.read_csv("processed_stock_data.csv")
         processed_data['time'] = pd.to_datetime(processed_data['time'])
         st.success("Đã tải dữ liệu xử lý từ file 'processed_stock_data.csv'.")
     except Exception:
-        st.error("File 'processed_stock_data.csv' không tồn tại. Please go to 'Fetch Stock Data' page to load data.")
-        st.stop()
-    
-    if 'symbol' not in processed_data.columns or 'daily_return' not in processed_data.columns:
-        st.error("Processed data must include 'symbol' and 'daily_return' columns.")
-        st.stop()
-    if processed_data.isnull().any().any():
-        st.error("Input data contains null values. Please clean the data before proceeding.")
+        st.error("File 'processed_stock_data.csv' không tồn tại. Vui lòng tải dữ liệu ở tab 'Tải dữ liệu cổ phiếu'.")
         st.stop()
     
     expected_returns = processed_data.groupby('symbol')['daily_return'].mean()
@@ -433,60 +440,63 @@ elif page == "Portfolio Optimization (SGD - Sharpe)":
             weights = np.maximum(weights, 0)
             weights /= np.sum(weights)
             if np.allclose(weights, previous_weights, atol=tolerance):
-                st.write(f"Convergence reached after {epoch + 1} epochs")
+                st.write(f"Đạt hội tụ sau {epoch + 1} vòng lặp")
                 break
             previous_weights = weights.copy()
         return best_weights
 
-    optimal_weights_sgd_bsharp = sgd_portfolio_optimization(expected_returns, cov_matrix)
+    optimal_weights_sgd_sharpe = sgd_portfolio_optimization(expected_returns, cov_matrix)
     
-    st.subheader("Optimal Portfolio Weights (SGD - Sharpe):")
+    st.subheader("Trọng số tối ưu (SGD - Sharpe):")
     for i, symbol in enumerate(expected_returns.index):
-        st.write(f"Stock: {symbol}, Optimal Weight: {optimal_weights_sgd_bsharp[i]:.4f}")
-    st.write(f"Best Sharpe Ratio: {np.dot(optimal_weights_sgd_bsharp, expected_returns) / np.sqrt(np.dot(optimal_weights_sgd_bsharp.T, np.dot(cov_matrix, optimal_weights_sgd_bsharp))):.4f}")
+        st.write(f"Cổ phiếu: {symbol}, Trọng số tối ưu: {optimal_weights_sgd_sharpe[i]:.4f}")
+    st.write(f"Tỷ lệ Sharpe tốt nhất: {np.dot(optimal_weights_sgd_sharpe, expected_returns) / np.sqrt(np.dot(optimal_weights_sgd_sharpe.T, np.dot(cov_matrix, optimal_weights_sgd_sharpe))):.4f}")
     
-    # Biểu đồ trực quan: Pie & Bar cho SGD - Sharpe
+    # Biểu đồ trực quan: Pie & Bar
     portfolio_data_sharpe = pd.DataFrame({
-        'Stock': expected_returns.index,
-        'Optimal Weight': optimal_weights_sgd_bsharp
+        'Cổ phiếu': expected_returns.index,
+        'Trọng số tối ưu': optimal_weights_sgd_sharpe
     })
-    # Số lượng cổ phiếu cần gán màu
-    num_stocks = len(portfolio_data_sharpe['Stock'])
-    colors = [random_color() for _ in range(num_stocks)]
+    portfolio_data_filtered = portfolio_data_sharpe[portfolio_data_sharpe['Trọng số tối ưu'] > 0]
 
     fig_sharpe = make_subplots(
         rows=1, cols=2,
-        subplot_titles=['Optimal Portfolio Weights (Pie)', 'Optimal Portfolio Weights (Bar)'],
+        subplot_titles=['Trọng số tối ưu (Pie)', 'Trọng số tối ưu (Bar)'],
         specs=[[{'type': 'pie'}, {'type': 'bar'}]]
     )
+
+    # Vẽ biểu đồ tròn với dữ liệu đã lọc
     fig_sharpe.add_trace(
         go.Pie(
-            labels=portfolio_data_sharpe['Stock'],
-            values=portfolio_data_sharpe['Optimal Weight'],
+            labels=portfolio_data_filtered['Cổ phiếu'],
+            values=portfolio_data_filtered['Trọng số tối ưu'],
             hole=0.3,
             textinfo='percent+label',
             textfont_size=14,
             marker=dict(
-                colors=colors,  # Sử dụng danh sách màu random
+                colors=[random_color() for _ in range(len(portfolio_data_filtered))],
                 line=dict(color='#000000', width=2)
             ),
             hoverinfo='label+percent'
         ),
         row=1, col=1
     )
+
+    # Vẽ biểu đồ cột với dữ liệu đã lọc
     fig_sharpe.add_trace(
         go.Bar(
-            x=portfolio_data_sharpe['Stock'],
-            y=portfolio_data_sharpe['Optimal Weight'],
+            x=portfolio_data_filtered['Cổ phiếu'],
+            y=portfolio_data_filtered['Trọng số tối ưu'],
             marker=dict(
-                color=colors,  # Sử dụng danh sách màu random
+                color=[random_color() for _ in range(len(portfolio_data_filtered))],
                 line=dict(color='#000000', width=2)
-            )
+            ),
         ),
         row=1, col=2
     )
+
     fig_sharpe.update_layout(
-        title="Optimal Portfolio Weights (SGD - Sharpe) Comparison",
+        title="So sánh trọng số tối ưu (SGD - Sharpe)",
         title_x=0.5,
         height=500,
         width=1000,
@@ -496,9 +506,9 @@ elif page == "Portfolio Optimization (SGD - Sharpe)":
     )
     st.plotly_chart(fig_sharpe, use_container_width=True)
     
-    # Tính lợi nhuận tích lũy của danh mục (SGD - Sharpe)
+    # Tính lợi nhuận tích lũy của danh mục
     processed_data['weighted_return_sharpe'] = processed_data['daily_return'] * processed_data['symbol'].map(
-        dict(zip(expected_returns.index, optimal_weights_sgd_bsharp))
+        dict(zip(expected_returns.index, optimal_weights_sgd_sharpe))
     )
     portfolio_daily_return_sharpe = processed_data.groupby('time')['weighted_return_sharpe'].sum().reset_index()
     portfolio_daily_return_sharpe.rename(columns={'weighted_return_sharpe': 'daily_return'}, inplace=True)
@@ -507,22 +517,22 @@ elif page == "Portfolio Optimization (SGD - Sharpe)":
     st.subheader("Lợi nhuận tích lũy của danh mục (SGD - Sharpe)")
     st.line_chart(portfolio_daily_return_sharpe.set_index('time')['cumulative_portfolio_return'])
     
-    # Expander chứa phần so sánh với VN-Index cho SGD - Sharpe
+    # So sánh với VN-Index
     with st.expander("So sánh với VN-Index"):
         try:
             vnindex_data = pd.read_csv("vnindex_data.csv")
             vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
-            st.success("VN-Index data loaded successfully.")
+            st.success("Đã tải dữ liệu VN-Index từ file 'vnindex_data.csv'.")
         except:
-            st.warning("VN-Index data not found. Attempting to load it...")
+            st.warning("Không tìm thấy file 'vnindex_data.csv'. Đang tải dữ liệu VN-Index...")
             try:
                 stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
                 vnindex_data = stock.quote.history(start='2020-01-01', end='2024-12-31')
                 vnindex_data['time'] = pd.to_datetime(vnindex_data['time'])
                 vnindex_data.to_csv("vnindex_data.csv", index=False)
-                st.success("VN-Index data saved successfully.")
+                st.success("Đã lưu dữ liệu VN-Index vào file 'vnindex_data.csv'.")
             except Exception as e:
-                st.error(f"Error loading VN-Index data: {e}")
+                st.error(f"Lỗi khi tải dữ liệu VN-Index: {e}")
                 st.stop()
         
         vnindex_data['market_return'] = vnindex_data['close'].pct_change()
@@ -535,65 +545,66 @@ elif page == "Portfolio Optimization (SGD - Sharpe)":
             how='inner'
         )
         comparison_sharpe.rename(columns={
-            'cumulative_portfolio_return': 'Portfolio Return (Sharpe)',
-            'cumulative_daily_return': 'VN-Index Return'
+            'cumulative_portfolio_return': 'Lợi nhuận danh mục (Sharpe)',
+            'cumulative_daily_return': 'Lợi nhuận VN-Index'
         }, inplace=True)
         
-        st.subheader("Comparison Table (Last 10 rows)")
-        st.dataframe(comparison_sharpe[['time', 'Portfolio Return (Sharpe)', 'VN-Index Return']].tail(10))
+        st.subheader("Bảng so sánh lợi nhuận (10 dòng cuối)")
+        st.dataframe(comparison_sharpe[['time', 'Lợi nhuận danh mục (Sharpe)', 'Lợi nhuận VN-Index']].tail(10))
         
         fig_comp_sharpe = go.Figure()
         fig_comp_sharpe.add_trace(go.Scatter(
             x=comparison_sharpe['time'],
-            y=comparison_sharpe['Portfolio Return (Sharpe)'],
+            y=comparison_sharpe['Lợi nhuận danh mục (Sharpe)'],
             mode='lines',
-            name='Portfolio Return (Sharpe)',
+            name='Lợi nhuận danh mục (Sharpe)',
             line=dict(color='orange', width=2),
-            hovertemplate='Date: %{x}<br>Portfolio Return (Sharpe): %{y:.2%}<extra></extra>'
+            hovertemplate='Ngày: %{x}<br>Lợi nhuận danh mục (Sharpe): %{y:.2%}<extra></extra>'
         ))
         fig_comp_sharpe.add_trace(go.Scatter(
             x=comparison_sharpe['time'],
-            y=comparison_sharpe['VN-Index Return'],
+            y=comparison_sharpe['Lợi nhuận VN-Index'],
             mode='lines',
-            name='VN-Index Return',
+            name='Lợi nhuận VN-Index',
             line=dict(color='red', width=2),
-            hovertemplate='Date: %{x}<br>VN-Index Return: %{y:.2%}<extra></extra>'
+            hovertemplate='Ngày: %{x}<br>Lợi nhuận VN-Index: %{y:.2%}<extra></extra>'
         ))
         fig_comp_sharpe.update_layout(
-            title="Comparison of Portfolio Return (Sharpe Optimization) vs VN-Index Return",
-            xaxis_title="Time",
-            yaxis_title="Cumulative Return",
+            title="So sánh lợi nhuận danh mục (Sharpe) vs VN-Index",
+            xaxis_title="Thời gian",
+            yaxis_title="Lợi nhuận tích lũy",
             template="plotly_white",
             hovermode="x unified"
         )
         st.plotly_chart(fig_comp_sharpe, use_container_width=True)
         comparison_sharpe.to_csv("portfolio_vs_vnindex_comparison_sharpe.csv", index=False)
-        st.write("Comparison saved to 'portfolio_vs_vnindex_comparison_sharpe.csv'.")
+        st.write("Dữ liệu so sánh đã được lưu vào 'portfolio_vs_vnindex_comparison_sharpe.csv'.")
+
 ###########################################
-# Trang 8: Data Visualization
+# Tab 5: Trực quan hóa dữ liệu
 ###########################################
-elif page == "Data Visualization":
-    st.header("Data Visualization")
+with tab5:
+    st.header("Trực quan hóa dữ liệu")
     try:
         processed_data = pd.read_csv("processed_stock_data.csv")
         processed_data['time'] = pd.to_datetime(processed_data['time'])
     except Exception as e:
-        st.error("Không thể tải file 'processed_stock_data.csv'. Vui lòng chuyển đến trang 'Fetch Stock Data' để tải dữ liệu.")
+        st.error("Không thể tải file 'processed_stock_data.csv'. Vui lòng tải dữ liệu ở tab 'Tải dữ liệu cổ phiếu'.")
         st.stop()
     
-    st.subheader("Stock Closing Price Trend Over Time")
+    st.subheader("Xu hướng giá đóng cửa cổ phiếu theo thời gian")
     fig1 = px.line(
         processed_data,
         x='time',
         y='close',
         color='symbol',
-        title='Stock Closing Price Trend Over Time',
-        labels={'time': 'Time', 'close': 'Closing Price', 'symbol': 'Stock Symbol'},
+        title='Xu hướng giá đóng cửa cổ phiếu theo thời gian',
+        labels={'time': 'Thời gian', 'close': 'Giá đóng cửa', 'symbol': 'Mã cổ phiếu'},
     )
     fig1.update_layout(
-        xaxis_title='Time',
-        yaxis_title='Closing Price',
-        legend_title='Stock Symbol',
+        xaxis_title='Thời gian',
+        yaxis_title='Giá đóng cửa',
+        legend_title='Mã cổ phiếu',
         template='plotly_white',
         hovermode='x unified',
         xaxis=dict(showgrid=False),
@@ -602,7 +613,7 @@ elif page == "Data Visualization":
     )
     st.plotly_chart(fig1, use_container_width=True)
     
-    st.subheader("Correlation Heatmap of Closing Prices")
+    st.subheader("Biểu đồ nhiệt tương quan giá đóng cửa")
     close_data = processed_data.pivot_table(values='close', index='time', columns='symbol')
     correlation_matrix = close_data.corr()
     rounded_correlation = correlation_matrix.round(2)
@@ -611,7 +622,7 @@ elif page == "Data Visualization":
         x=correlation_matrix.columns,
         y=correlation_matrix.index,
         colorscale='RdBu',
-        colorbar=dict(title='Correlation Coefficient'),
+        colorbar=dict(title='Hệ số tương quan'),
     ))
     for i in range(len(rounded_correlation)):
         for j in range(len(rounded_correlation.columns)):
@@ -623,18 +634,18 @@ elif page == "Data Visualization":
                 font=dict(color='black' if rounded_correlation.iloc[i, j] < 0 else 'white')
             )
     fig2.update_traces(
-        hovertemplate='<b>Stock Symbol: %{x}</b><br>' +
-                      '<b>Stock Symbol: %{y}</b><br>' +
-                      'Correlation Coefficient: %{z:.4f}<extra></extra>'
+        hovertemplate='<b>Mã cổ phiếu: %{x}</b><br>' +
+                      '<b>Mã cổ phiếu: %{y}</b><br>' +
+                      'Hệ số tương quan: %{z:.4f}<extra></extra>'
     )
     fig2.update_layout(
-        title='Correlation Heatmap of Closing Prices',
-        xaxis_title='Stock Symbol',
-        yaxis_title='Stock Symbol'
+        title='Biểu đồ nhiệt tương quan giá đóng cửa',
+        xaxis_title='Mã cổ phiếu',
+        yaxis_title='Mã cổ phiếu'
     )
     st.plotly_chart(fig2, use_container_width=True)
     
-    st.subheader("Heat Map of Daily Returns")
+    st.subheader("Biểu đồ nhiệt tương quan lợi nhuận hàng ngày")
     returns_data = processed_data.pivot_table(index='time', columns='symbol', values='daily_return')
     correlation_matrix_returns = returns_data.corr()
     fig3 = ff.create_annotated_heatmap(
@@ -644,23 +655,26 @@ elif page == "Data Visualization":
         colorscale='RdBu',
         zmin=-1, zmax=1
     )
-    fig3.update_layout(title="Correlation Matrix Between Stocks")
+    fig3.update_layout(title="Ma trận tương quan giữa các cổ phiếu")
     st.plotly_chart(fig3, use_container_width=True)
     
-    st.subheader("Stock Volatility Over Time")
-    fig4 = px.line(processed_data, x='time', y='volatility', color='symbol', title="Stock Volatility Over Time")
-    fig4.update_xaxes(title_text='Date')
-    fig4.update_yaxes(title_text='Volatility')
+    st.subheader("Biến động cổ phiếu theo thời gian")
+    fig4 = px.line(processed_data, x='time', y='volatility', color='symbol', title="Biến động cổ phiếu theo thời gian")
+    fig4.update_xaxes(title_text='Ngày')
+    fig4.update_yaxes(title_text='Biến động')
     st.plotly_chart(fig4, use_container_width=True)
 
 ###########################################
-# Trang 9: Company Information
+# Tab 6: Thông tin công ty
 ###########################################
-elif page == "Company Information":
+###########################################
+# Tab 6: Thông tin công ty
+###########################################
+with tab6:
     st.header("Thông tin tổng hợp về các công ty")
     
     if 'symbols' not in st.session_state:
-        st.error("Vui lòng nhập mã cổ phiếu ở trang 'Fetch Stock Data' trước.")
+        st.error("Vui lòng nhập mã cổ phiếu ở tab 'Tải dữ liệu cổ phiếu' trước.")
     else:
         symbols = st.session_state['symbols']
         
@@ -669,7 +683,6 @@ elif page == "Company Information":
             try:
                 company = Vnstock().stock(symbol=symbol, source='TCBS').company
                 
-                # Hồ sơ công ty
                 with st.expander("**Hồ sơ công ty:**"):
                     profile = company.profile()
                     if isinstance(profile, pd.DataFrame):
@@ -677,7 +690,6 @@ elif page == "Company Information":
                     else:
                         st.write(profile)
                 
-                # Cổ đông
                 with st.expander("**Cổ đông:**"):
                     shareholders = company.shareholders()
                     if isinstance(shareholders, pd.DataFrame):
@@ -685,7 +697,6 @@ elif page == "Company Information":
                     else:
                         st.write(shareholders)
                 
-                # Giao dịch nội bộ
                 with st.expander("**Giao dịch nội bộ:**"):
                     insider_deals = company.insider_deals()
                     if isinstance(insider_deals, pd.DataFrame):
@@ -693,7 +704,6 @@ elif page == "Company Information":
                     else:
                         st.write(insider_deals)
                 
-                # Công ty con
                 with st.expander("**Công ty con:**"):
                     subsidiaries = company.subsidiaries()
                     if isinstance(subsidiaries, pd.DataFrame):
@@ -701,7 +711,6 @@ elif page == "Company Information":
                     else:
                         st.write(subsidiaries)
                 
-                # Ban điều hành
                 with st.expander("**Ban điều hành:**"):
                     officers = company.officers()
                     if isinstance(officers, pd.DataFrame):
@@ -709,7 +718,6 @@ elif page == "Company Information":
                     else:
                         st.write(officers)
                 
-                # Sự kiện
                 with st.expander("**Sự kiện:**"):
                     events = company.events()
                     if isinstance(events, pd.DataFrame):
@@ -717,23 +725,21 @@ elif page == "Company Information":
                     else:
                         st.write(events)
                 
-                # Tin tức
                 with st.expander("**Tin tức:**"):
                     news = company.news()
                     if isinstance(news, list) and all(isinstance(item, dict) for item in news):
                         for item in news:
                             st.write(f"- {item.get('title', 'N/A')} ({item.get('date', 'N/A')})")
-                            st.write(item.get('summary', 'No summary available'))
+                            st.write(item.get('summary', 'Không có tóm tắt'))
                             url = item.get('url', None)
                             if url:
                                 st.write(f"[Đọc thêm]({url})")
                             else:
-                                st.write("No URL available")
+                                st.write("Không có URL")
                     else:
                         st.write("Tin tức không khả dụng hoặc định dạng không đúng:")
                         st.write(news)
                 
-                # Cổ tức
                 with st.expander("**Cổ tức:**"):
                     dividends = company.dividends()
                     if isinstance(dividends, pd.DataFrame):
@@ -745,11 +751,11 @@ elif page == "Company Information":
                 st.error(f"Lỗi khi tải thông tin cho mã {symbol}: {e}")
 
 ###########################################
-# Trang 10: Financial Statements
+# Tab 7: Báo cáo tài chính
 ###########################################
-elif page == "Financial Statements":
+with tab7:
     st.header("Tổng hợp báo cáo tài chính")
-
+    
     # Cấu hình Plotly: modebar luôn hiển thị
     config = {
         "displayModeBar": True,
@@ -834,18 +840,19 @@ elif page == "Financial Statements":
                                     for j, col in enumerate(selected_cols[i:i+5]):
                                         with cols[j]:
                                             st.markdown(f"**{col}**")
-                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ đường"])
+                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
                                             
+                                            # Tab Biểu đồ cột: chỉ vẽ biểu đồ cột gốc
                                             with tab1:
-                                                bar_fig = go.Figure()
-                                                bar_fig.add_trace(go.Bar(
+                                                fig_bar = go.Figure()
+                                                fig_bar.add_trace(go.Bar(
                                                     x=df_filtered['Năm'],
                                                     y=df_filtered[col],
                                                     name=col,
                                                     marker_color=random_color(),
                                                     hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
                                                 ))
-                                                bar_fig.update_layout(
+                                                fig_bar.update_layout(
                                                     title=f"{col} - {symbol}",
                                                     xaxis_title="Năm",
                                                     yaxis_title="Giá trị (Tỷ đồng)",
@@ -853,26 +860,46 @@ elif page == "Financial Statements":
                                                     height=300,
                                                     margin=dict(l=20, r=20, t=150, b=20)
                                                 )
-                                                st.plotly_chart(bar_fig, use_container_width=True, config=config, key=f"balance_{symbol}_{col}_bar")
+                                                st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"balance_{symbol}_{col}_bar")
                                             
+                                            # Tab Biểu đồ CAGR: vẽ đường CAGR tính theo dữ liệu
                                             with tab2:
-                                                line_fig = go.Figure()
-                                                line_fig.add_trace(go.Scatter(
-                                                    x=df_filtered['Năm'],
-                                                    y=df_filtered[col],
-                                                    mode='lines+markers',
-                                                    marker_color=random_color(),
-                                                    hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
-                                                ))
-                                                line_fig.update_layout(
-                                                    title=f"{col} - {symbol} (Đường)",
-                                                    xaxis_title="Năm",
-                                                    yaxis_title="Giá trị (Tỷ đồng)",
-                                                    template="plotly_white",
-                                                    height=300,
-                                                    margin=dict(l=20, r=20, t=150, b=20)
-                                                )
-                                                st.plotly_chart(line_fig, use_container_width=True, config=config, key=f"balance_{symbol}_{col}_line")
+                                                if df_filtered.shape[0] >= 2:
+                                                    df_sorted = df_filtered.sort_values('Năm')
+                                                    start_year = df_sorted['Năm'].iloc[0]
+                                                    start_val = df_sorted[col].iloc[0]
+                                                    if start_val != 0:
+                                                        years = df_sorted['Năm']
+                                                        cagr_values = []
+                                                        for y, val in zip(years, df_sorted[col]):
+                                                            period = y - start_year
+                                                            if period == 0:
+                                                                cagr_values.append(None)
+                                                            else:
+                                                                cagr_val = (val / start_val)**(1/period) - 1
+                                                                cagr_values.append(cagr_val * 100)
+                                                        fig_cagr = go.Figure()
+                                                        fig_cagr.add_trace(go.Scatter(
+                                                            x=years,
+                                                            y=cagr_values,
+                                                            mode='lines+markers',
+                                                            name='CAGR',
+                                                            marker_color='red',
+                                                            hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
+                                                        ))
+                                                        fig_cagr.update_layout(
+                                                            title=f"CAGR của {col} - {symbol}",
+                                                            xaxis_title="Năm",
+                                                            yaxis_title="CAGR (%)",
+                                                            template="plotly_white",
+                                                            height=300,
+                                                            margin=dict(l=20, r=20, t=150, b=20)
+                                                        )
+                                                        st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"balance_{symbol}_{col}_cagr")
+                                                    else:
+                                                        st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                                                else:
+                                                    st.info("Không đủ dữ liệu để tính CAGR.")
                     else:
                         st.warning(f"Không có dữ liệu hoặc cột 'Năm' cho bảng cân đối kế toán của {symbol}")
                 except Exception as e:
@@ -908,18 +935,18 @@ elif page == "Financial Statements":
                                     for j, col in enumerate(selected_cols[i:i+5]):
                                         with cols[j]:
                                             st.markdown(f"**{col}**")
-                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ đường"])
+                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
                                             
                                             with tab1:
-                                                bar_fig = go.Figure()
-                                                bar_fig.add_trace(go.Bar(
+                                                fig_bar = go.Figure()
+                                                fig_bar.add_trace(go.Bar(
                                                     x=df_filtered['Năm'],
                                                     y=df_filtered[col],
                                                     name=col,
                                                     marker_color=random_color(),
                                                     hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
                                                 ))
-                                                bar_fig.update_layout(
+                                                fig_bar.update_layout(
                                                     title=f"{col} - {symbol}",
                                                     xaxis_title="Năm",
                                                     yaxis_title="Giá trị (Tỷ đồng)",
@@ -927,26 +954,45 @@ elif page == "Financial Statements":
                                                     height=300,
                                                     margin=dict(l=20, r=20, t=150, b=20)
                                                 )
-                                                st.plotly_chart(bar_fig, use_container_width=True, config=config, key=f"income_{symbol}_{col}_bar")
+                                                st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"income_{symbol}_{col}_bar")
                                             
                                             with tab2:
-                                                line_fig = go.Figure()
-                                                line_fig.add_trace(go.Scatter(
-                                                    x=df_filtered['Năm'],
-                                                    y=df_filtered[col],
-                                                    mode='lines+markers',
-                                                    marker_color=random_color(),
-                                                    hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
-                                                ))
-                                                line_fig.update_layout(
-                                                    title=f"{col} - {symbol} (Đường)",
-                                                    xaxis_title="Năm",
-                                                    yaxis_title="Giá trị (Tỷ đồng)",
-                                                    template="plotly_white",
-                                                    height=300,
-                                                    margin=dict(l=20, r=20, t=150, b=20)
-                                                )
-                                                st.plotly_chart(line_fig, use_container_width=True, config=config, key=f"income_{symbol}_{col}_line")
+                                                if df_filtered.shape[0] >= 2:
+                                                    df_sorted = df_filtered.sort_values('Năm')
+                                                    start_year = df_sorted['Năm'].iloc[0]
+                                                    start_val = df_sorted[col].iloc[0]
+                                                    if start_val != 0:
+                                                        years = df_sorted['Năm']
+                                                        cagr_values = []
+                                                        for y, val in zip(years, df_sorted[col]):
+                                                            period = y - start_year
+                                                            if period == 0:
+                                                                cagr_values.append(None)
+                                                            else:
+                                                                cagr_val = (val / start_val)**(1/period) - 1
+                                                                cagr_values.append(cagr_val * 100)
+                                                        fig_cagr = go.Figure()
+                                                        fig_cagr.add_trace(go.Scatter(
+                                                            x=years,
+                                                            y=cagr_values,
+                                                            mode='lines+markers',
+                                                            name='CAGR',
+                                                            marker_color='red',
+                                                            hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
+                                                        ))
+                                                        fig_cagr.update_layout(
+                                                            title=f"CAGR của {col} - {symbol}",
+                                                            xaxis_title="Năm",
+                                                            yaxis_title="CAGR (%)",
+                                                            template="plotly_white",
+                                                            height=300,
+                                                            margin=dict(l=20, r=20, t=150, b=20)
+                                                        )
+                                                        st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"income_{symbol}_{col}_cagr")
+                                                    else:
+                                                        st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                                                else:
+                                                    st.info("Không đủ dữ liệu để tính CAGR.")
                     else:
                         st.warning(f"Không có dữ liệu hoặc cột 'Năm' cho báo cáo lãi lỗ của {symbol}")
                 except Exception as e:
@@ -982,18 +1028,18 @@ elif page == "Financial Statements":
                                     for j, col in enumerate(selected_cols[i:i+5]):
                                         with cols[j]:
                                             st.markdown(f"**{col}**")
-                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ đường"])
+                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
                                             
                                             with tab1:
-                                                bar_fig = go.Figure()
-                                                bar_fig.add_trace(go.Bar(
+                                                fig_bar = go.Figure()
+                                                fig_bar.add_trace(go.Bar(
                                                     x=df_filtered['Năm'],
                                                     y=df_filtered[col],
                                                     name=col,
                                                     marker_color=random_color(),
                                                     hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
                                                 ))
-                                                bar_fig.update_layout(
+                                                fig_bar.update_layout(
                                                     title=f"{col} - {symbol}",
                                                     xaxis_title="Năm",
                                                     yaxis_title="Giá trị (Tỷ đồng)",
@@ -1001,26 +1047,45 @@ elif page == "Financial Statements":
                                                     height=300,
                                                     margin=dict(l=20, r=20, t=150, b=20)
                                                 )
-                                                st.plotly_chart(bar_fig, use_container_width=True, config=config, key=f"cashflow_{symbol}_{col}_bar")
+                                                st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"cashflow_{symbol}_{col}_bar")
                                             
                                             with tab2:
-                                                line_fig = go.Figure()
-                                                line_fig.add_trace(go.Scatter(
-                                                    x=df_filtered['Năm'],
-                                                    y=df_filtered[col],
-                                                    mode='lines+markers',
-                                                    marker_color=random_color(),
-                                                    hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
-                                                ))
-                                                line_fig.update_layout(
-                                                    title=f"{col} - {symbol} (Đường)",
-                                                    xaxis_title="Năm",
-                                                    yaxis_title="Giá trị (Tỷ đồng)",
-                                                    template="plotly_white",
-                                                    height=300,
-                                                    margin=dict(l=20, r=20, t=150, b=20)
-                                                )
-                                                st.plotly_chart(line_fig, use_container_width=True, config=config, key=f"cashflow_{symbol}_{col}_line")
+                                                if df_filtered.shape[0] >= 2:
+                                                    df_sorted = df_filtered.sort_values('Năm')
+                                                    start_year = df_sorted['Năm'].iloc[0]
+                                                    start_val = df_sorted[col].iloc[0]
+                                                    if start_val != 0:
+                                                        years = df_sorted['Năm']
+                                                        cagr_values = []
+                                                        for y, val in zip(years, df_sorted[col]):
+                                                            period = y - start_year
+                                                            if period == 0:
+                                                                cagr_values.append(None)
+                                                            else:
+                                                                cagr_val = (val / start_val)**(1/period) - 1
+                                                                cagr_values.append(cagr_val * 100)
+                                                        fig_cagr = go.Figure()
+                                                        fig_cagr.add_trace(go.Scatter(
+                                                            x=years,
+                                                            y=cagr_values,
+                                                            mode='lines+markers',
+                                                            name='CAGR',
+                                                            marker_color='red',
+                                                            hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
+                                                        ))
+                                                        fig_cagr.update_layout(
+                                                            title=f"CAGR của {col} - {symbol}",
+                                                            xaxis_title="Năm",
+                                                            yaxis_title="CAGR (%)",
+                                                            template="plotly_white",
+                                                            height=300,
+                                                            margin=dict(l=20, r=20, t=150, b=20)
+                                                        )
+                                                        st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"cashflow_{symbol}_{col}_cagr")
+                                                    else:
+                                                        st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                                                else:
+                                                    st.info("Không đủ dữ liệu để tính CAGR.")
                     else:
                         st.warning(f"Không có dữ liệu hoặc cột 'Năm' cho báo cáo lưu chuyển tiền tệ của {symbol}")
                 except Exception as e:
@@ -1056,18 +1121,18 @@ elif page == "Financial Statements":
                                     for j, col in enumerate(selected_cols[i:i+5]):
                                         with cols[j]:
                                             st.markdown(f"**{col}**")
-                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ đường"])
+                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
                                             
                                             with tab1:
-                                                bar_fig = go.Figure()
-                                                bar_fig.add_trace(go.Bar(
+                                                fig_bar = go.Figure()
+                                                fig_bar.add_trace(go.Bar(
                                                     x=df_filtered['Meta_Năm'],
                                                     y=df_filtered[col],
                                                     name=col,
                                                     marker_color=random_color(),
                                                     hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
                                                 ))
-                                                bar_fig.update_layout(
+                                                fig_bar.update_layout(
                                                     title=f"{col} - {symbol}",
                                                     xaxis_title="Năm",
                                                     yaxis_title="Giá trị",
@@ -1075,27 +1140,166 @@ elif page == "Financial Statements":
                                                     height=300,
                                                     margin=dict(l=20, r=20, t=150, b=20)
                                                 )
-                                                st.plotly_chart(bar_fig, use_container_width=True, config=config, key=f"ratios_{symbol}_{col}_bar")
+                                                st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"ratios_{symbol}_{col}_bar")
                                             
                                             with tab2:
-                                                line_fig = go.Figure()
-                                                line_fig.add_trace(go.Scatter(
-                                                    x=df_filtered['Meta_Năm'],
-                                                    y=df_filtered[col],
-                                                    mode='lines+markers',
-                                                    marker_color=random_color(),
-                                                    hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
-                                                ))
-                                                line_fig.update_layout(
-                                                    title=f"{col} - {symbol} (Đường)",
-                                                    xaxis_title="Năm",
-                                                    yaxis_title="Giá trị",
-                                                    template="plotly_white",
-                                                    height=300,
-                                                    margin=dict(l=20, r=20, t=150, b=20)
-                                                )
-                                                st.plotly_chart(line_fig, use_container_width=True, config=config, key=f"ratios_{symbol}_{col}_line")
+                                                if df_filtered.shape[0] >= 2:
+                                                    df_sorted = df_filtered.sort_values('Meta_Năm')
+                                                    start_year = df_sorted['Meta_Năm'].iloc[0]
+                                                    start_val = df_sorted[col].iloc[0]
+                                                    if start_val != 0:
+                                                        years = df_sorted['Meta_Năm']
+                                                        cagr_values = []
+                                                        for y, val in zip(years, df_sorted[col]):
+                                                            period = y - start_year
+                                                            if period == 0:
+                                                                cagr_values.append(None)
+                                                            else:
+                                                                cagr_val = (val / start_val)**(1/period) - 1
+                                                                cagr_values.append(cagr_val * 100)
+                                                        fig_cagr = go.Figure()
+                                                        fig_cagr.add_trace(go.Scatter(
+                                                            x=years,
+                                                            y=cagr_values,
+                                                            mode='lines+markers',
+                                                            name='CAGR',
+                                                            marker_color='red',
+                                                            hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
+                                                        ))
+                                                        fig_cagr.update_layout(
+                                                            title=f"CAGR của {col} - {symbol}",
+                                                            xaxis_title="Năm",
+                                                            yaxis_title="CAGR (%)",
+                                                            template="plotly_white",
+                                                            height=300,
+                                                            margin=dict(l=20, r=20, t=150, b=20)
+                                                        )
+                                                        st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"ratios_{symbol}_{col}_cagr")
+                                                    else:
+                                                        st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                                                else:
+                                                    st.info("Không đủ dữ liệu để tính CAGR.")
                     else:
                         st.warning(f"Không có dữ liệu hoặc cột 'Meta_Năm' cho chỉ số tài chính của {symbol}")
                 except Exception as e:
                     st.error(f"Lỗi khi tải chỉ số tài chính cho mã {symbol}: {e}")
+# Phân tích kỹ thuật
+with tab8:
+    st.header("Phân tích kỹ thuật")
+    
+    # **Chọn mã cổ phiếu**
+    stock_symbol = st.text_input("Nhập mã cổ phiếu (ví dụ: VCI)", value="VCI").upper()
+
+    # **Chọn khoảng thời gian**
+    start_date = st.date_input("Chọn ngày bắt đầu", value=datetime.datetime(2020, 1, 1))
+    end_date = st.date_input("Chọn ngày kết thúc", value=datetime.datetime.now())
+
+    # **Lấy dữ liệu từ vnstock**
+    try:
+        stock = Vnstock().stock(symbol=stock_symbol, source='VCI')
+        stock_data = stock.quote.history(start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'))
+        if stock_data.empty:
+            st.error(f"Không có dữ liệu cho mã {stock_symbol} trong khoảng thời gian đã chọn.")
+            st.stop()
+        stock_data['time'] = pd.to_datetime(stock_data['time'])
+        stock_data = stock_data.sort_values('time')
+        st.success(f"Đã tải dữ liệu cho mã {stock_symbol} từ {start_date} đến {end_date}.")
+    except Exception as e:
+        st.error(f"Lỗi khi tải dữ liệu: {e}")
+        st.stop()
+
+    # **Chọn chỉ báo kỹ thuật**
+    indicators = st.multiselect(
+        "Chọn chỉ báo kỹ thuật",
+        ["SMA (Đường trung bình động đơn giản)", "EMA (Đường trung bình động hàm mũ)", 
+         "RSI (Chỉ số sức mạnh tương đối)", "MACD", "Bollinger Bands"]
+    )
+
+    # **Tính toán các chỉ báo kỹ thuật**
+    if "SMA (Đường trung bình động đơn giản)" in indicators:
+        sma_period = st.number_input("Chọn khoảng thời gian cho SMA", min_value=1, max_value=200, value=50)
+        stock_data['SMA'] = stock_data['close'].rolling(window=sma_period).mean()
+
+    if "EMA (Đường trung bình động hàm mũ)" in indicators:
+        ema_period = st.number_input("Chọn khoảng thời gian cho EMA", min_value=1, max_value=200, value=50)
+        stock_data['EMA'] = stock_data['close'].ewm(span=ema_period, adjust=False).mean()
+
+    if "RSI (Chỉ số sức mạnh tương đối)" in indicators:
+        rsi_period = st.number_input("Chọn khoảng thời gian cho RSI", min_value=1, max_value=100, value=14)
+        delta = stock_data['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
+        rs = gain / loss
+        stock_data['RSI'] = 100 - (100 / (1 + rs))
+
+    if "MACD" in indicators:
+        stock_data['EMA12'] = stock_data['close'].ewm(span=12, adjust=False).mean()
+        stock_data['EMA26'] = stock_data['close'].ewm(span=26, adjust=False).mean()
+        stock_data['MACD'] = stock_data['EMA12'] - stock_data['EMA26']
+        stock_data['Signal_Line'] = stock_data['MACD'].ewm(span=9, adjust=False).mean()
+
+    if "Bollinger Bands" in indicators:
+        bb_period = st.number_input("Chọn khoảng thời gian cho Bollinger Bands", min_value=1, max_value=200, value=20)
+        stock_data['Middle_Band'] = stock_data['close'].rolling(window=bb_period).mean()
+        stock_data['Upper_Band'] = stock_data['Middle_Band'] + 2 * stock_data['close'].rolling(window=bb_period).std()
+        stock_data['Lower_Band'] = stock_data['Middle_Band'] - 2 * stock_data['close'].rolling(window=bb_period).std()
+
+    # **Tạo biểu đồ với khối lượng có trục Y phụ**
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, 
+                        row_heights=[0.7, 0.3], specs=[[{"secondary_y": True}], [{}]])
+
+    # **Thêm biểu đồ nến vào hàng trên (trục Y chính)**
+    fig.add_trace(go.Candlestick(
+        x=stock_data['time'],
+        open=stock_data['open'],
+        high=stock_data['high'],
+        low=stock_data['low'],
+        close=stock_data['close'],
+        name="Nến"
+    ), row=1, col=1, secondary_y=False)  # Trục Y chính
+
+    # **Thêm khối lượng giao dịch vào trục Y phụ**
+    fig.add_trace(go.Bar(
+        x=stock_data['time'],
+        y=stock_data['volume'],
+        name="Khối lượng",
+        marker_color='blue',
+        opacity=0.4
+    ), row=1, col=1, secondary_y=True)  # Trục Y phụ
+
+    # **Thêm các chỉ báo kỹ thuật vào biểu đồ**
+    if "SMA (Đường trung bình động đơn giản)" in indicators:
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['SMA'], name=f"SMA {sma_period}", line=dict(color='orange')), row=1, col=1, secondary_y=False)
+
+    if "EMA (Đường trung bình động hàm mũ)" in indicators:
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['EMA'], name=f"EMA {ema_period}", line=dict(color='green')), row=1, col=1, secondary_y=False)
+
+    if "Bollinger Bands" in indicators:
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Upper_Band'], name="Upper Band", line=dict(color='red')), row=1, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Middle_Band'], name="Middle Band", line=dict(color='purple')), row=1, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Lower_Band'], name="Lower Band", line=dict(color='red')), row=1, col=1, secondary_y=False)
+
+    # **Thêm RSI hoặc MACD vào hàng dưới**
+    if "RSI (Chỉ số sức mạnh tương đối)" in indicators:
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['RSI'], name="RSI", line=dict(color='purple')), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)  # Ngưỡng quá mua
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)  # Ngưỡng quá bán
+
+    if "MACD" in indicators:
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['MACD'], name="MACD", line=dict(color='blue')), row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Signal_Line'], name="Signal Line", line=dict(color='red')), row=2, col=1)
+
+    # **Cập nhật giao diện**
+    fig.update_layout(
+        title=f"Phân tích kỹ thuật cho {stock_symbol} từ {start_date} đến {end_date}",
+        height=800,
+        showlegend=True,
+        xaxis_title="Thời gian",
+        yaxis_title="Giá",
+        yaxis2=dict(title="Khối lượng", overlaying="y", side="right"),
+        template="plotly_white",
+        xaxis_rangeslider_visible=False
+    )
+
+    # **Hiển thị biểu đồ**
+    st.plotly_chart(fig, use_container_width=True)
