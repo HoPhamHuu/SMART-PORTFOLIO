@@ -263,13 +263,19 @@ with tab3:
     def return_based_weights(expected_returns):
         return expected_returns / expected_returns.sum()
     
+    # Thêm hàm chiếu trọng số lên simplex để đảm bảo tổng trọng số = 1 và các trọng số không âm
+    def project_simplex(v, s=1):
+        v = np.maximum(v, 0)
+        total = np.sum(v)
+        return v / total * s if total != 0 else v
+    
     def sgd_optimization(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000):
         weights = return_based_weights(expected_returns)
         for epoch in range(epochs):
             grad = np.dot(cov_matrix, weights) / portfolio_volatility(weights, cov_matrix)
             weights -= learning_rate * grad
-            weights = np.maximum(weights, 0)
-            weights /= np.sum(weights)
+            # Sử dụng project_simplex để đảm bảo ràng buộc
+            weights = project_simplex(weights)
         return weights
     
     optimal_weights_sgd = sgd_optimization(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000)
@@ -418,40 +424,35 @@ with tab4:
     except Exception:
         st.error("File 'processed_stock_data.csv' không tồn tại. Vui lòng tải dữ liệu ở tab 'Tải dữ liệu cổ phiếu'.")
         st.stop()
-    
+
     expected_returns = processed_data.groupby('symbol')['daily_return'].mean()
     cov_matrix = processed_data.pivot(index='time', columns='symbol', values='daily_return').cov()
-    
-    def sgd_portfolio_optimization(expected_returns, cov_matrix, learning_rate=0.01, epochs=2000, tolerance=1e-6):
-        weights = expected_returns / expected_returns.sum()
-        weights = weights.values
-        previous_weights = weights.copy()
-        best_sharpe_ratio = -np.inf
-        best_weights = weights.copy()
+
+    # Thêm hàm chiếu trọng số lên simplex
+    def project_simplex(v, s=1):
+        v = np.maximum(v, 0)
+        total = np.sum(v)
+        return v / total * s if total != 0 else v
+
+    def sgd_portfolio_optimization_sharpe(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000):
+        weights = (expected_returns / expected_returns.sum())
+        weights = weights.values  # chuyển sang mảng NumPy để thuận tiện tính toán
         for epoch in range(epochs):
             portfolio_return = np.dot(weights, expected_returns)
             portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-            sharpe_ratio = portfolio_return / portfolio_volatility if portfolio_volatility != 0 else 0
-            if sharpe_ratio > best_sharpe_ratio:
-                best_sharpe_ratio = sharpe_ratio
-                best_weights = weights.copy()
             grad = 2 * np.dot(cov_matrix, weights)
             weights -= learning_rate * grad
-            weights = np.maximum(weights, 0)
-            weights /= np.sum(weights)
-            if np.allclose(weights, previous_weights, atol=tolerance):
-                st.write(f"Đạt hội tụ sau {epoch + 1} vòng lặp")
-                break
-            previous_weights = weights.copy()
-        return best_weights
+            # Sử dụng project_simplex để đảm bảo trọng số không âm và tổng = 1
+            weights = project_simplex(weights)
+        return weights
 
-    optimal_weights_sgd_sharpe = sgd_portfolio_optimization(expected_returns, cov_matrix)
-    
+    optimal_weights_sgd_sharpe = sgd_portfolio_optimization_sharpe(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000)
+
     st.subheader("Trọng số tối ưu (SGD - Sharpe):")
     for i, symbol in enumerate(expected_returns.index):
         st.write(f"Cổ phiếu: {symbol}, Trọng số tối ưu: {optimal_weights_sgd_sharpe[i]:.4f}")
-    st.write(f"Tỷ lệ Sharpe tốt nhất: {np.dot(optimal_weights_sgd_sharpe, expected_returns) / np.sqrt(np.dot(optimal_weights_sgd_sharpe.T, np.dot(cov_matrix, optimal_weights_sgd_sharpe))):.4f}")
-    
+    sharpe_ratio = np.dot(optimal_weights_sgd_sharpe, expected_returns) / np.sqrt(np.dot(optimal_weights_sgd_sharpe.T, np.dot(cov_matrix, optimal_weights_sgd_sharpe)))
+    st.write(f"Tỷ lệ Sharpe tốt nhất: {sharpe_ratio:.4f}")
     # Biểu đồ trực quan: Pie & Bar
     portfolio_data_sharpe = pd.DataFrame({
         'Cổ phiếu': expected_returns.index,
@@ -806,383 +807,391 @@ with tab7:
             """,
             unsafe_allow_html=True
         )
+        
+        # Hàm random_color (nếu chưa có)
+        import random
+        def random_color():
+            colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink']
+            return random.choice(colors)
 
+        # --- Sử dụng caching để tải dữ liệu tài chính ---
+        @st.cache_data(show_spinner=False)
+        def get_financial_data(symbol, report_type):
+            try:
+                stock = Vnstock().stock(symbol=symbol, source='VCI')
+                if report_type == "balance":
+                    data = stock.finance.balance_sheet(period='year', lang='vi', dropna=True)
+                elif report_type == "income":
+                    data = stock.finance.income_statement(period='year', lang='vi', dropna=True)
+                elif report_type == "cashflow":
+                    data = stock.finance.cash_flow(period='year', lang="vi", dropna=True)
+                elif report_type == "ratios":
+                    data = stock.finance.ratio(period='year', lang='vi', dropna=True)
+                else:
+                    data = pd.DataFrame()
+                data = rename_duplicate_columns(data)
+                return data
+            except Exception as e:
+                st.error(f"Lỗi khi tải dữ liệu cho {symbol} - {report_type}: {e}")
+                return pd.DataFrame()
+        
+        # ----------------------- Lặp qua từng mã cổ phiếu -----------------------
         for symbol in symbols:
             st.header(f"Báo cáo tài chính cho mã {symbol}")
 
             # ----------------------- BALANCE SHEET -----------------------
             with st.expander("Bảng cân đối kế toán (Hàng năm)"):
-                try:
-                    stock = Vnstock().stock(symbol=symbol, source='VCI')
-                    balance_data = stock.finance.balance_sheet(period='year', lang='vi', dropna=True)
-                    balance_data = rename_duplicate_columns(balance_data)
-                    if not balance_data.empty and 'Năm' in balance_data.columns:
-                        st.write("**Bảng cân đối kế toán (Hàng năm):**")
-                        st.dataframe(balance_data)
-                        numeric_cols = [col for col in balance_data.select_dtypes(include=['float64', 'int64']).columns if col != 'Năm']
-                        if numeric_cols:
-                            selected_cols = st.multiselect(
-                                f"Chọn các chỉ số để hiển thị biểu đồ (Bảng cân đối {symbol}):",
-                                options=numeric_cols,
-                                default=[]
-                            )
-                            available_years = sorted(balance_data['Năm'].unique())
-                            selected_years = st.multiselect(
-                                f"Chọn năm hiển thị cho biểu đồ (Bảng cân đối {symbol}):",
-                                options=available_years,
-                                default=[]
-                            )
-                            df_filtered = balance_data[balance_data['Năm'].isin(selected_years)] if selected_years else balance_data
+                balance_data = get_financial_data(symbol, "balance")
+                if not balance_data.empty and 'Năm' in balance_data.columns:
+                    st.write("**Bảng cân đối kế toán (Hàng năm):**")
+                    st.dataframe(balance_data)
+                    numeric_cols = [col for col in balance_data.select_dtypes(include=['float64', 'int64']).columns if col != 'Năm']
+                    if numeric_cols:
+                        selected_cols = st.multiselect(
+                            f"Chọn các chỉ số để hiển thị biểu đồ (Bảng cân đối {symbol}):",
+                            options=numeric_cols,
+                            default=[]
+                        )
+                        available_years = sorted(balance_data['Năm'].unique())
+                        selected_years = st.multiselect(
+                            f"Chọn năm hiển thị cho biểu đồ (Bảng cân đối {symbol}):",
+                            options=available_years,
+                            default=[]
+                        )
+                        df_filtered = balance_data[balance_data['Năm'].isin(selected_years)] if selected_years else balance_data
 
-                            if selected_cols:
-                                for i in range(0, len(selected_cols), 5):
-                                    cols = st.columns(5)
-                                    for j, col in enumerate(selected_cols[i:i+5]):
-                                        with cols[j]:
-                                            st.markdown(f"**{col}**")
-                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
-                                            
-                                            # Tab Biểu đồ cột: chỉ vẽ biểu đồ cột gốc
-                                            with tab1:
-                                                fig_bar = go.Figure()
-                                                fig_bar.add_trace(go.Bar(
-                                                    x=df_filtered['Năm'],
-                                                    y=df_filtered[col],
-                                                    name=col,
-                                                    marker_color=random_color(),
-                                                    hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
-                                                ))
-                                                fig_bar.update_layout(
-                                                    title=f"{col} - {symbol}",
-                                                    xaxis_title="Năm",
-                                                    yaxis_title="Giá trị (Tỷ đồng)",
-                                                    template="plotly_white",
-                                                    height=300,
-                                                    margin=dict(l=20, r=20, t=150, b=20)
-                                                )
-                                                st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"balance_{symbol}_{col}_bar")
-                                            
-                                            # Tab Biểu đồ CAGR: vẽ đường CAGR tính theo dữ liệu
-                                            with tab2:
-                                                if df_filtered.shape[0] >= 2:
-                                                    df_sorted = df_filtered.sort_values('Năm')
-                                                    start_year = df_sorted['Năm'].iloc[0]
-                                                    start_val = df_sorted[col].iloc[0]
-                                                    if start_val != 0:
-                                                        years = df_sorted['Năm']
-                                                        cagr_values = []
-                                                        for y, val in zip(years, df_sorted[col]):
-                                                            period = y - start_year
-                                                            if period == 0:
-                                                                cagr_values.append(None)
-                                                            else:
-                                                                cagr_val = (val / start_val)**(1/period) - 1
-                                                                cagr_values.append(cagr_val * 100)
-                                                        fig_cagr = go.Figure()
-                                                        fig_cagr.add_trace(go.Scatter(
-                                                            x=years,
-                                                            y=cagr_values,
-                                                            mode='lines+markers',
-                                                            name='CAGR',
-                                                            marker_color='red',
-                                                            hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
-                                                        ))
-                                                        fig_cagr.update_layout(
-                                                            title=f"CAGR của {col} - {symbol}",
-                                                            xaxis_title="Năm",
-                                                            yaxis_title="CAGR (%)",
-                                                            template="plotly_white",
-                                                            height=300,
-                                                            margin=dict(l=20, r=20, t=150, b=20)
-                                                        )
-                                                        st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"balance_{symbol}_{col}_cagr")
-                                                    else:
-                                                        st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                        if selected_cols:
+                            for i in range(0, len(selected_cols), 5):
+                                cols = st.columns(5)
+                                for j, col in enumerate(selected_cols[i:i+5]):
+                                    with cols[j]:
+                                        st.markdown(f"**{col}**")
+                                        tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
+                                        
+                                        # Biểu đồ cột
+                                        with tab1:
+                                            fig_bar = go.Figure()
+                                            fig_bar.add_trace(go.Bar(
+                                                x=df_filtered['Năm'],
+                                                y=df_filtered[col],
+                                                name=col,
+                                                marker_color=random_color(),
+                                                hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
+                                            ))
+                                            fig_bar.update_layout(
+                                                title=f"{col} - {symbol}",
+                                                xaxis_title="Năm",
+                                                yaxis_title="Giá trị (Tỷ đồng)",
+                                                template="plotly_white",
+                                                height=300,
+                                                margin=dict(l=20, r=20, t=150, b=20)
+                                            )
+                                            st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"balance_{symbol}_{col}_bar")
+                                        
+                                        # Biểu đồ CAGR
+                                        with tab2:
+                                            if df_filtered.shape[0] >= 2:
+                                                df_sorted = df_filtered.sort_values('Năm')
+                                                start_year = df_sorted['Năm'].iloc[0]
+                                                start_val = df_sorted[col].iloc[0]
+                                                if start_val != 0:
+                                                    years = df_sorted['Năm']
+                                                    cagr_values = []
+                                                    for y, val in zip(years, df_sorted[col]):
+                                                        period = y - start_year
+                                                        if period == 0:
+                                                            cagr_values.append(None)
+                                                        else:
+                                                            cagr_val = (val / start_val)**(1/period) - 1
+                                                            cagr_values.append(cagr_val * 100)
+                                                    fig_cagr = go.Figure()
+                                                    fig_cagr.add_trace(go.Scatter(
+                                                        x=years,
+                                                        y=cagr_values,
+                                                        mode='lines+markers',
+                                                        name='CAGR',
+                                                        marker_color='red',
+                                                        hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
+                                                    ))
+                                                    fig_cagr.update_layout(
+                                                        title=f"CAGR của {col} - {symbol}",
+                                                        xaxis_title="Năm",
+                                                        yaxis_title="CAGR (%)",
+                                                        template="plotly_white",
+                                                        height=300,
+                                                        margin=dict(l=20, r=20, t=150, b=20)
+                                                    )
+                                                    st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"balance_{symbol}_{col}_cagr")
                                                 else:
-                                                    st.info("Không đủ dữ liệu để tính CAGR.")
-                    else:
-                        st.warning(f"Không có dữ liệu hoặc cột 'Năm' cho bảng cân đối kế toán của {symbol}")
-                except Exception as e:
-                    st.error(f"Lỗi khi tải bảng cân đối kế toán cho mã {symbol}: {e}")
+                                                    st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                                            else:
+                                                st.info("Không đủ dữ liệu để tính CAGR.")
+                else:
+                    st.warning(f"Không có dữ liệu hoặc cột 'Năm' cho bảng cân đối kế toán của {symbol}")
 
             # ----------------------- INCOME STATEMENT -----------------------
             with st.expander("Báo cáo lãi lỗ (Hàng năm)"):
-                try:
-                    stock = Vnstock().stock(symbol=symbol, source='VCI')
-                    income_data = stock.finance.income_statement(period='year', lang='vi', dropna=True)
-                    income_data = rename_duplicate_columns(income_data)
-                    if not income_data.empty and 'Năm' in income_data.columns:
-                        st.write("**Báo cáo lãi lỗ (Hàng năm):**")
-                        st.dataframe(income_data)
-                        numeric_cols = [col for col in income_data.select_dtypes(include=['float64', 'int64']).columns if col != 'Năm']
-                        if numeric_cols:
-                            selected_cols = st.multiselect(
-                                f"Chọn các chỉ số để hiển thị biểu đồ (Báo cáo lãi lỗ {symbol}):",
-                                options=numeric_cols,
-                                default=[]
-                            )
-                            available_years = sorted(income_data['Năm'].unique())
-                            selected_years = st.multiselect(
-                                f"Chọn năm hiển thị cho biểu đồ (Báo cáo lãi lỗ {symbol}):",
-                                options=available_years,
-                                default=[]
-                            )
-                            df_filtered = income_data[income_data['Năm'].isin(selected_years)] if selected_years else income_data
+                income_data = get_financial_data(symbol, "income")
+                if not income_data.empty and 'Năm' in income_data.columns:
+                    st.write("**Báo cáo lãi lỗ (Hàng năm):**")
+                    st.dataframe(income_data)
+                    numeric_cols = [col for col in income_data.select_dtypes(include=['float64', 'int64']).columns if col != 'Năm']
+                    if numeric_cols:
+                        selected_cols = st.multiselect(
+                            f"Chọn các chỉ số để hiển thị biểu đồ (Báo cáo lãi lỗ {symbol}):",
+                            options=numeric_cols,
+                            default=[]
+                        )
+                        available_years = sorted(income_data['Năm'].unique())
+                        selected_years = st.multiselect(
+                            f"Chọn năm hiển thị cho biểu đồ (Báo cáo lãi lỗ {symbol}):",
+                            options=available_years,
+                            default=[]
+                        )
+                        df_filtered = income_data[income_data['Năm'].isin(selected_years)] if selected_years else income_data
 
-                            if selected_cols:
-                                for i in range(0, len(selected_cols), 5):
-                                    cols = st.columns(5)
-                                    for j, col in enumerate(selected_cols[i:i+5]):
-                                        with cols[j]:
-                                            st.markdown(f"**{col}**")
-                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
-                                            
-                                            with tab1:
-                                                fig_bar = go.Figure()
-                                                fig_bar.add_trace(go.Bar(
-                                                    x=df_filtered['Năm'],
-                                                    y=df_filtered[col],
-                                                    name=col,
-                                                    marker_color=random_color(),
-                                                    hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
-                                                ))
-                                                fig_bar.update_layout(
-                                                    title=f"{col} - {symbol}",
-                                                    xaxis_title="Năm",
-                                                    yaxis_title="Giá trị (Tỷ đồng)",
-                                                    template="plotly_white",
-                                                    height=300,
-                                                    margin=dict(l=20, r=20, t=150, b=20)
-                                                )
-                                                st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"income_{symbol}_{col}_bar")
-                                            
-                                            with tab2:
-                                                if df_filtered.shape[0] >= 2:
-                                                    df_sorted = df_filtered.sort_values('Năm')
-                                                    start_year = df_sorted['Năm'].iloc[0]
-                                                    start_val = df_sorted[col].iloc[0]
-                                                    if start_val != 0:
-                                                        years = df_sorted['Năm']
-                                                        cagr_values = []
-                                                        for y, val in zip(years, df_sorted[col]):
-                                                            period = y - start_year
-                                                            if period == 0:
-                                                                cagr_values.append(None)
-                                                            else:
-                                                                cagr_val = (val / start_val)**(1/period) - 1
-                                                                cagr_values.append(cagr_val * 100)
-                                                        fig_cagr = go.Figure()
-                                                        fig_cagr.add_trace(go.Scatter(
-                                                            x=years,
-                                                            y=cagr_values,
-                                                            mode='lines+markers',
-                                                            name='CAGR',
-                                                            marker_color='red',
-                                                            hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
-                                                        ))
-                                                        fig_cagr.update_layout(
-                                                            title=f"CAGR của {col} - {symbol}",
-                                                            xaxis_title="Năm",
-                                                            yaxis_title="CAGR (%)",
-                                                            template="plotly_white",
-                                                            height=300,
-                                                            margin=dict(l=20, r=20, t=150, b=20)
-                                                        )
-                                                        st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"income_{symbol}_{col}_cagr")
-                                                    else:
-                                                        st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                        if selected_cols:
+                            for i in range(0, len(selected_cols), 5):
+                                cols = st.columns(5)
+                                for j, col in enumerate(selected_cols[i:i+5]):
+                                    with cols[j]:
+                                        st.markdown(f"**{col}**")
+                                        tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
+                                        
+                                        with tab1:
+                                            fig_bar = go.Figure()
+                                            fig_bar.add_trace(go.Bar(
+                                                x=df_filtered['Năm'],
+                                                y=df_filtered[col],
+                                                name=col,
+                                                marker_color=random_color(),
+                                                hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
+                                            ))
+                                            fig_bar.update_layout(
+                                                title=f"{col} - {symbol}",
+                                                xaxis_title="Năm",
+                                                yaxis_title="Giá trị (Tỷ đồng)",
+                                                template="plotly_white",
+                                                height=300,
+                                                margin=dict(l=20, r=20, t=150, b=20)
+                                            )
+                                            st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"income_{symbol}_{col}_bar")
+                                        
+                                        with tab2:
+                                            if df_filtered.shape[0] >= 2:
+                                                df_sorted = df_filtered.sort_values('Năm')
+                                                start_year = df_sorted['Năm'].iloc[0]
+                                                start_val = df_sorted[col].iloc[0]
+                                                if start_val != 0:
+                                                    years = df_sorted['Năm']
+                                                    cagr_values = []
+                                                    for y, val in zip(years, df_sorted[col]):
+                                                        period = y - start_year
+                                                        if period == 0:
+                                                            cagr_values.append(None)
+                                                        else:
+                                                            cagr_val = (val / start_val)**(1/period) - 1
+                                                            cagr_values.append(cagr_val * 100)
+                                                    fig_cagr = go.Figure()
+                                                    fig_cagr.add_trace(go.Scatter(
+                                                        x=years,
+                                                        y=cagr_values,
+                                                        mode='lines+markers',
+                                                        name='CAGR',
+                                                        marker_color='red',
+                                                        hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
+                                                    ))
+                                                    fig_cagr.update_layout(
+                                                        title=f"CAGR của {col} - {symbol}",
+                                                        xaxis_title="Năm",
+                                                        yaxis_title="CAGR (%)",
+                                                        template="plotly_white",
+                                                        height=300,
+                                                        margin=dict(l=20, r=20, t=150, b=20)
+                                                    )
+                                                    st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"income_{symbol}_{col}_cagr")
                                                 else:
-                                                    st.info("Không đủ dữ liệu để tính CAGR.")
-                    else:
-                        st.warning(f"Không có dữ liệu hoặc cột 'Năm' cho báo cáo lãi lỗ của {symbol}")
-                except Exception as e:
-                    st.error(f"Lỗi khi tải báo cáo lãi lỗ cho mã {symbol}: {e}")
+                                                    st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                                            else:
+                                                st.info("Không đủ dữ liệu để tính CAGR.")
+                else:
+                    st.warning(f"Không có dữ liệu hoặc cột 'Năm' cho báo cáo lãi lỗ của {symbol}")
 
             # ----------------------- CASH FLOW -----------------------
             with st.expander("Báo cáo lưu chuyển tiền tệ (Hàng năm)"):
-                try:
-                    stock = Vnstock().stock(symbol=symbol, source='VCI')
-                    cash_flow_data = stock.finance.cash_flow(period='year', lang="vi", dropna=True)
-                    cash_flow_data = rename_duplicate_columns(cash_flow_data)
-                    if not cash_flow_data.empty and 'Năm' in cash_flow_data.columns:
-                        st.write("**Báo cáo lưu chuyển tiền tệ (Hàng năm):**")
-                        st.dataframe(cash_flow_data)
-                        numeric_cols = [col for col in cash_flow_data.select_dtypes(include=['float64', 'int64']).columns if col != 'Năm']
-                        if numeric_cols:
-                            selected_cols = st.multiselect(
-                                f"Chọn các chỉ số để hiển thị biểu đồ (Báo cáo lưu chuyển {symbol}):",
-                                options=numeric_cols,
-                                default=[]
-                            )
-                            available_years = sorted(cash_flow_data['Năm'].unique())
-                            selected_years = st.multiselect(
-                                f"Chọn năm hiển thị cho biểu đồ (Báo cáo lưu chuyển {symbol}):",
-                                options=available_years,
-                                default=[]
-                            )
-                            df_filtered = cash_flow_data[cash_flow_data['Năm'].isin(selected_years)] if selected_years else cash_flow_data
+                cash_flow_data = get_financial_data(symbol, "cashflow")
+                if not cash_flow_data.empty and 'Năm' in cash_flow_data.columns:
+                    st.write("**Báo cáo lưu chuyển tiền tệ (Hàng năm):**")
+                    st.dataframe(cash_flow_data)
+                    numeric_cols = [col for col in cash_flow_data.select_dtypes(include=['float64', 'int64']).columns if col != 'Năm']
+                    if numeric_cols:
+                        selected_cols = st.multiselect(
+                            f"Chọn các chỉ số để hiển thị biểu đồ (Báo cáo lưu chuyển {symbol}):",
+                            options=numeric_cols,
+                            default=[]
+                        )
+                        available_years = sorted(cash_flow_data['Năm'].unique())
+                        selected_years = st.multiselect(
+                            f"Chọn năm hiển thị cho biểu đồ (Báo cáo lưu chuyển {symbol}):",
+                            options=available_years,
+                            default=[]
+                        )
+                        df_filtered = cash_flow_data[cash_flow_data['Năm'].isin(selected_years)] if selected_years else cash_flow_data
 
-                            if selected_cols:
-                                for i in range(0, len(selected_cols), 5):
-                                    cols = st.columns(5)
-                                    for j, col in enumerate(selected_cols[i:i+5]):
-                                        with cols[j]:
-                                            st.markdown(f"**{col}**")
-                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
-                                            
-                                            with tab1:
-                                                fig_bar = go.Figure()
-                                                fig_bar.add_trace(go.Bar(
-                                                    x=df_filtered['Năm'],
-                                                    y=df_filtered[col],
-                                                    name=col,
-                                                    marker_color=random_color(),
-                                                    hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
-                                                ))
-                                                fig_bar.update_layout(
-                                                    title=f"{col} - {symbol}",
-                                                    xaxis_title="Năm",
-                                                    yaxis_title="Giá trị (Tỷ đồng)",
-                                                    template="plotly_white",
-                                                    height=300,
-                                                    margin=dict(l=20, r=20, t=150, b=20)
-                                                )
-                                                st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"cashflow_{symbol}_{col}_bar")
-                                            
-                                            with tab2:
-                                                if df_filtered.shape[0] >= 2:
-                                                    df_sorted = df_filtered.sort_values('Năm')
-                                                    start_year = df_sorted['Năm'].iloc[0]
-                                                    start_val = df_sorted[col].iloc[0]
-                                                    if start_val != 0:
-                                                        years = df_sorted['Năm']
-                                                        cagr_values = []
-                                                        for y, val in zip(years, df_sorted[col]):
-                                                            period = y - start_year
-                                                            if period == 0:
-                                                                cagr_values.append(None)
-                                                            else:
-                                                                cagr_val = (val / start_val)**(1/period) - 1
-                                                                cagr_values.append(cagr_val * 100)
-                                                        fig_cagr = go.Figure()
-                                                        fig_cagr.add_trace(go.Scatter(
-                                                            x=years,
-                                                            y=cagr_values,
-                                                            mode='lines+markers',
-                                                            name='CAGR',
-                                                            marker_color='red',
-                                                            hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
-                                                        ))
-                                                        fig_cagr.update_layout(
-                                                            title=f"CAGR của {col} - {symbol}",
-                                                            xaxis_title="Năm",
-                                                            yaxis_title="CAGR (%)",
-                                                            template="plotly_white",
-                                                            height=300,
-                                                            margin=dict(l=20, r=20, t=150, b=20)
-                                                        )
-                                                        st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"cashflow_{symbol}_{col}_cagr")
-                                                    else:
-                                                        st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                        if selected_cols:
+                            for i in range(0, len(selected_cols), 5):
+                                cols = st.columns(5)
+                                for j, col in enumerate(selected_cols[i:i+5]):
+                                    with cols[j]:
+                                        st.markdown(f"**{col}**")
+                                        tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
+                                        
+                                        with tab1:
+                                            fig_bar = go.Figure()
+                                            fig_bar.add_trace(go.Bar(
+                                                x=df_filtered['Năm'],
+                                                y=df_filtered[col],
+                                                name=col,
+                                                marker_color=random_color(),
+                                                hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
+                                            ))
+                                            fig_bar.update_layout(
+                                                title=f"{col} - {symbol}",
+                                                xaxis_title="Năm",
+                                                yaxis_title="Giá trị (Tỷ đồng)",
+                                                template="plotly_white",
+                                                height=300,
+                                                margin=dict(l=20, r=20, t=150, b=20)
+                                            )
+                                            st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"cashflow_{symbol}_{col}_bar")
+                                        
+                                        with tab2:
+                                            if df_filtered.shape[0] >= 2:
+                                                df_sorted = df_filtered.sort_values('Năm')
+                                                start_year = df_sorted['Năm'].iloc[0]
+                                                start_val = df_sorted[col].iloc[0]
+                                                if start_val != 0:
+                                                    years = df_sorted['Năm']
+                                                    cagr_values = []
+                                                    for y, val in zip(years, df_sorted[col]):
+                                                        period = y - start_year
+                                                        if period == 0:
+                                                            cagr_values.append(None)
+                                                        else:
+                                                            cagr_val = (val / start_val)**(1/period) - 1
+                                                            cagr_values.append(cagr_val * 100)
+                                                    fig_cagr = go.Figure()
+                                                    fig_cagr.add_trace(go.Scatter(
+                                                        x=years,
+                                                        y=cagr_values,
+                                                        mode='lines+markers',
+                                                        name='CAGR',
+                                                        marker_color='red',
+                                                        hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
+                                                    ))
+                                                    fig_cagr.update_layout(
+                                                        title=f"CAGR của {col} - {symbol}",
+                                                        xaxis_title="Năm",
+                                                        yaxis_title="CAGR (%)",
+                                                        template="plotly_white",
+                                                        height=300,
+                                                        margin=dict(l=20, r=20, t=150, b=20)
+                                                    )
+                                                    st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"cashflow_{symbol}_{col}_cagr")
                                                 else:
-                                                    st.info("Không đủ dữ liệu để tính CAGR.")
-                    else:
-                        st.warning(f"Không có dữ liệu hoặc cột 'Năm' cho báo cáo lưu chuyển tiền tệ của {symbol}")
-                except Exception as e:
-                    st.error(f"Lỗi khi tải báo cáo lưu chuyển tiền tệ cho mã {symbol}: {e}")
+                                                    st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                                            else:
+                                                st.info("Không đủ dữ liệu để tính CAGR.")
+                else:
+                    st.warning(f"Không có dữ liệu hoặc cột 'Năm' cho báo cáo lưu chuyển tiền tệ của {symbol}")
 
             # ----------------------- FINANCIAL RATIOS -----------------------
             with st.expander("Chỉ số tài chính (Hàng năm)"):
-                try:
-                    stock = Vnstock().stock(symbol=symbol, source='VCI')
-                    ratios_data = stock.finance.ratio(period='year', lang='vi', dropna=True)
-                    ratios_data = rename_duplicate_columns(ratios_data)
-                    if not ratios_data.empty and 'Meta_Năm' in ratios_data.columns:
-                        st.write("**Chỉ số tài chính (Hàng năm):**")
-                        st.dataframe(ratios_data)
-                        numeric_cols = [col for col in ratios_data.select_dtypes(include=['float64', 'int64']).columns if col != 'Meta_Năm']
-                        if numeric_cols:
-                            selected_cols = st.multiselect(
-                                f"Chọn các chỉ số để hiển thị biểu đồ (Chỉ số tài chính {symbol}):",
-                                options=numeric_cols,
-                                default=[]
-                            )
-                            available_years = sorted(ratios_data['Meta_Năm'].unique())
-                            selected_years = st.multiselect(
-                                f"Chọn năm hiển thị cho biểu đồ (Chỉ số tài chính {symbol}):",
-                                options=available_years,
-                                default=[]
-                            )
-                            df_filtered = ratios_data[ratios_data['Meta_Năm'].isin(selected_years)] if selected_years else ratios_data
+                ratios_data = get_financial_data(symbol, "ratios")
+                if not ratios_data.empty and 'Meta_Năm' in ratios_data.columns:
+                    st.write("**Chỉ số tài chính (Hàng năm):**")
+                    st.dataframe(ratios_data)
+                    numeric_cols = [col for col in ratios_data.select_dtypes(include=['float64', 'int64']).columns if col != 'Meta_Năm']
+                    if numeric_cols:
+                        selected_cols = st.multiselect(
+                            f"Chọn các chỉ số để hiển thị biểu đồ (Chỉ số tài chính {symbol}):",
+                            options=numeric_cols,
+                            default=[]
+                        )
+                        available_years = sorted(ratios_data['Meta_Năm'].unique())
+                        selected_years = st.multiselect(
+                            f"Chọn năm hiển thị cho biểu đồ (Chỉ số tài chính {symbol}):",
+                            options=available_years,
+                            default=[]
+                        )
+                        df_filtered = ratios_data[ratios_data['Meta_Năm'].isin(selected_years)] if selected_years else ratios_data
 
-                            if selected_cols:
-                                for i in range(0, len(selected_cols), 5):
-                                    cols = st.columns(5)
-                                    for j, col in enumerate(selected_cols[i:i+5]):
-                                        with cols[j]:
-                                            st.markdown(f"**{col}**")
-                                            tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
-                                            
-                                            with tab1:
-                                                fig_bar = go.Figure()
-                                                fig_bar.add_trace(go.Bar(
-                                                    x=df_filtered['Meta_Năm'],
-                                                    y=df_filtered[col],
-                                                    name=col,
-                                                    marker_color=random_color(),
-                                                    hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
-                                                ))
-                                                fig_bar.update_layout(
-                                                    title=f"{col} - {symbol}",
-                                                    xaxis_title="Năm",
-                                                    yaxis_title="Giá trị",
-                                                    template="plotly_white",
-                                                    height=300,
-                                                    margin=dict(l=20, r=20, t=150, b=20)
-                                                )
-                                                st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"ratios_{symbol}_{col}_bar")
-                                            
-                                            with tab2:
-                                                if df_filtered.shape[0] >= 2:
-                                                    df_sorted = df_filtered.sort_values('Meta_Năm')
-                                                    start_year = df_sorted['Meta_Năm'].iloc[0]
-                                                    start_val = df_sorted[col].iloc[0]
-                                                    if start_val != 0:
-                                                        years = df_sorted['Meta_Năm']
-                                                        cagr_values = []
-                                                        for y, val in zip(years, df_sorted[col]):
-                                                            period = y - start_year
-                                                            if period == 0:
-                                                                cagr_values.append(None)
-                                                            else:
-                                                                cagr_val = (val / start_val)**(1/period) - 1
-                                                                cagr_values.append(cagr_val * 100)
-                                                        fig_cagr = go.Figure()
-                                                        fig_cagr.add_trace(go.Scatter(
-                                                            x=years,
-                                                            y=cagr_values,
-                                                            mode='lines+markers',
-                                                            name='CAGR',
-                                                            marker_color='red',
-                                                            hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
-                                                        ))
-                                                        fig_cagr.update_layout(
-                                                            title=f"CAGR của {col} - {symbol}",
-                                                            xaxis_title="Năm",
-                                                            yaxis_title="CAGR (%)",
-                                                            template="plotly_white",
-                                                            height=300,
-                                                            margin=dict(l=20, r=20, t=150, b=20)
-                                                        )
-                                                        st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"ratios_{symbol}_{col}_cagr")
-                                                    else:
-                                                        st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                        if selected_cols:
+                            for i in range(0, len(selected_cols), 5):
+                                cols = st.columns(5)
+                                for j, col in enumerate(selected_cols[i:i+5]):
+                                    with cols[j]:
+                                        st.markdown(f"**{col}**")
+                                        tab1, tab2 = st.tabs(["Biểu đồ cột", "Biểu đồ CAGR"])
+                                        
+                                        with tab1:
+                                            fig_bar = go.Figure()
+                                            fig_bar.add_trace(go.Bar(
+                                                x=df_filtered['Meta_Năm'],
+                                                y=df_filtered[col],
+                                                name=col,
+                                                marker_color=random_color(),
+                                                hovertemplate=f"{col}: %{{y:.2f}}<br>Năm: %{{x}}"
+                                            ))
+                                            fig_bar.update_layout(
+                                                title=f"{col} - {symbol}",
+                                                xaxis_title="Năm",
+                                                yaxis_title="Giá trị",
+                                                template="plotly_white",
+                                                height=300,
+                                                margin=dict(l=20, r=20, t=150, b=20)
+                                            )
+                                            st.plotly_chart(fig_bar, use_container_width=True, config=config, key=f"ratios_{symbol}_{col}_bar")
+                                        
+                                        with tab2:
+                                            if df_filtered.shape[0] >= 2:
+                                                df_sorted = df_filtered.sort_values('Meta_Năm')
+                                                start_year = df_sorted['Meta_Năm'].iloc[0]
+                                                start_val = df_sorted[col].iloc[0]
+                                                if start_val != 0:
+                                                    years = df_sorted['Meta_Năm']
+                                                    cagr_values = []
+                                                    for y, val in zip(years, df_sorted[col]):
+                                                        period = y - start_year
+                                                        if period == 0:
+                                                            cagr_values.append(None)
+                                                        else:
+                                                            cagr_val = (val / start_val)**(1/period) - 1
+                                                            cagr_values.append(cagr_val * 100)
+                                                    fig_cagr = go.Figure()
+                                                    fig_cagr.add_trace(go.Scatter(
+                                                        x=years,
+                                                        y=cagr_values,
+                                                        mode='lines+markers',
+                                                        name='CAGR',
+                                                        marker_color='red',
+                                                        hovertemplate="CAGR: %{y:.2f}%<br>Năm: %{x}"
+                                                    ))
+                                                    fig_cagr.update_layout(
+                                                        title=f"CAGR của {col} - {symbol}",
+                                                        xaxis_title="Năm",
+                                                        yaxis_title="CAGR (%)",
+                                                        template="plotly_white",
+                                                        height=300,
+                                                        margin=dict(l=20, r=20, t=150, b=20)
+                                                    )
+                                                    st.plotly_chart(fig_cagr, use_container_width=True, config=config, key=f"ratios_{symbol}_{col}_cagr")
                                                 else:
-                                                    st.info("Không đủ dữ liệu để tính CAGR.")
-                    else:
-                        st.warning(f"Không có dữ liệu hoặc cột 'Meta_Năm' cho chỉ số tài chính của {symbol}")
-                except Exception as e:
-                    st.error(f"Lỗi khi tải chỉ số tài chính cho mã {symbol}: {e}")
+                                                    st.info("Giá trị ban đầu bằng 0, không thể tính CAGR.")
+                                            else:
+                                                st.info("Không đủ dữ liệu để tính CAGR.")
+                else:
+                    st.warning(f"Không có dữ liệu hoặc cột 'Meta_Năm' cho chỉ số tài chính của {symbol}")
 # Phân tích kỹ thuật
 with tab8:
     st.header("Phân tích kỹ thuật")
@@ -1211,8 +1220,17 @@ with tab8:
     # **Chọn chỉ báo kỹ thuật**
     indicators = st.multiselect(
         "Chọn chỉ báo kỹ thuật",
-        ["SMA (Đường trung bình động đơn giản)", "EMA (Đường trung bình động hàm mũ)", 
-         "RSI (Chỉ số sức mạnh tương đối)", "MACD", "Bollinger Bands"]
+        [
+            "SMA (Đường trung bình động đơn giản)", 
+            "EMA (Đường trung bình động hàm mũ)", 
+            "RSI (Chỉ số sức mạnh tương đối)", 
+            "MACD", 
+            "Bollinger Bands",
+            "Stochastic Oscillator",
+            "CCI (Commodity Channel Index)",
+            "ADX (Average Directional Index)",
+            "DMI"
+        ]
     )
 
     # **Tính toán các chỉ báo kỹ thuật**
@@ -1244,6 +1262,59 @@ with tab8:
         stock_data['Upper_Band'] = stock_data['Middle_Band'] + 2 * stock_data['close'].rolling(window=bb_period).std()
         stock_data['Lower_Band'] = stock_data['Middle_Band'] - 2 * stock_data['close'].rolling(window=bb_period).std()
 
+    if "Stochastic Oscillator" in indicators:
+        stoch_period = st.number_input("Chọn khoảng thời gian cho Stochastic Oscillator", min_value=1, max_value=100, value=14)
+        low_min = stock_data['low'].rolling(window=stoch_period).min()
+        high_max = stock_data['high'].rolling(window=stoch_period).max()
+        stock_data['%K'] = (stock_data['close'] - low_min) / (high_max - low_min) * 100
+        stock_data['%D'] = stock_data['%K'].rolling(window=3).mean()
+
+    if "CCI (Commodity Channel Index)" in indicators:
+        cci_period = st.number_input("Chọn khoảng thời gian cho CCI", min_value=1, max_value=200, value=20)
+        tp = (stock_data['high'] + stock_data['low'] + stock_data['close']) / 3
+        sma_tp = tp.rolling(window=cci_period).mean()
+        mad = tp.rolling(window=cci_period).apply(lambda x: np.fabs(x - x.mean()).mean())
+        stock_data['CCI'] = (tp - sma_tp) / (0.015 * mad)
+
+    if "ADX (Average Directional Index)" in indicators:
+        adx_period = st.number_input("Chọn khoảng thời gian cho ADX", min_value=1, max_value=100, value=14)
+        high = stock_data['high']
+        low = stock_data['low']
+        close = stock_data['close']
+        tr1 = high - low
+        tr2 = (high - close.shift()).abs()
+        tr3 = (low - close.shift()).abs()
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = true_range.rolling(window=adx_period).mean()
+        up_move = high - high.shift()
+        down_move = low.shift() - low
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+        plus_di = 100 * (pd.Series(plus_dm).rolling(window=adx_period).sum() / atr)
+        minus_di = 100 * (pd.Series(minus_dm).rolling(window=adx_period).sum() / atr)
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+        stock_data['ADX'] = dx.rolling(window=adx_period).mean()
+
+    # --- THÊM CHỈ BÁO MỚI: DMI ---
+    if "DMI" in indicators:
+        dmi_period = st.number_input("Chọn khoảng thời gian cho DMI", min_value=1, max_value=100, value=14)
+        high = stock_data['high']
+        low = stock_data['low']
+        close = stock_data['close']
+        up_move = high.diff()
+        down_move = -low.diff()
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+        tr1 = high - low
+        tr2 = (high - close.shift()).abs()
+        tr3 = (low - close.shift()).abs()
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = true_range.rolling(window=dmi_period).mean()
+        plus_di = 100 * (pd.Series(plus_dm).rolling(window=dmi_period).sum() / atr)
+        minus_di = 100 * (pd.Series(minus_dm).rolling(window=dmi_period).sum() / atr)
+        stock_data['+DI'] = plus_di
+        stock_data['-DI'] = minus_di
+
     # **Tạo biểu đồ với khối lượng có trục Y phụ**
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, 
                         row_heights=[0.7, 0.3], specs=[[{"secondary_y": True}], [{}]])
@@ -1256,7 +1327,7 @@ with tab8:
         low=stock_data['low'],
         close=stock_data['close'],
         name="Nến"
-    ), row=1, col=1, secondary_y=False)  # Trục Y chính
+    ), row=1, col=1, secondary_y=False)
 
     # **Thêm khối lượng giao dịch vào trục Y phụ**
     fig.add_trace(go.Bar(
@@ -1265,9 +1336,9 @@ with tab8:
         name="Khối lượng",
         marker_color='blue',
         opacity=0.4
-    ), row=1, col=1, secondary_y=True)  # Trục Y phụ
+    ), row=1, col=1, secondary_y=True)
 
-    # **Thêm các chỉ báo kỹ thuật vào biểu đồ**
+    # **Thêm các chỉ báo kỹ thuật vào biểu đồ hàng trên**
     if "SMA (Đường trung bình động đơn giản)" in indicators:
         fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['SMA'], name=f"SMA {sma_period}", line=dict(color='orange')), row=1, col=1, secondary_y=False)
 
@@ -1279,15 +1350,32 @@ with tab8:
         fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Middle_Band'], name="Middle Band", line=dict(color='purple')), row=1, col=1, secondary_y=False)
         fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Lower_Band'], name="Lower Band", line=dict(color='red')), row=1, col=1, secondary_y=False)
 
-    # **Thêm RSI hoặc MACD vào hàng dưới**
+    # **Thêm các chỉ báo kỹ thuật vào hàng dưới**
     if "RSI (Chỉ số sức mạnh tương đối)" in indicators:
         fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['RSI'], name="RSI", line=dict(color='purple')), row=2, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)  # Ngưỡng quá mua
-        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)  # Ngưỡng quá bán
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
 
     if "MACD" in indicators:
         fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['MACD'], name="MACD", line=dict(color='blue')), row=2, col=1)
         fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Signal_Line'], name="Signal Line", line=dict(color='red')), row=2, col=1)
+
+    if "Stochastic Oscillator" in indicators:
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['%K'], name="Stochastic %K", line=dict(color='blue')), row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['%D'], name="Stochastic %D", line=dict(color='orange')), row=2, col=1)
+
+    if "CCI (Commodity Channel Index)" in indicators:
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['CCI'], name="CCI", line=dict(color='brown')), row=2, col=1)
+        fig.add_hline(y=100, line_dash="dash", line_color="green", row=2, col=1)
+        fig.add_hline(y=-100, line_dash="dash", line_color="green", row=2, col=1)
+
+    if "ADX (Average Directional Index)" in indicators:
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['ADX'], name="ADX", line=dict(color='magenta')), row=2, col=1)
+        fig.add_hline(y=25, line_dash="dash", line_color="gray", row=2, col=1)
+
+    if "DMI" in indicators:
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['+DI'], name="+DI", line=dict(color='blue')), row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['-DI'], name="-DI", line=dict(color='red')), row=2, col=1)
 
     # **Cập nhật giao diện**
     fig.update_layout(
