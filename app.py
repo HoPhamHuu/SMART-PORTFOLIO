@@ -12,6 +12,7 @@ import random
 import streamlit as st
 import pandas as pd
 import datetime
+import threading
 # Hàm tạo màu ngẫu nhiên
 def random_color():
     return "#%06x" % random.randint(0, 0xFFFFFF)
