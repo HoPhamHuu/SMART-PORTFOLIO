@@ -1195,7 +1195,7 @@ with tab7:
 # Phân tích kỹ thuật
 with tab8:
     st.header("Phân tích kỹ thuật")
-    
+
     # **Chọn mã cổ phiếu**
     stock_symbol = st.text_input("Nhập mã cổ phiếu (ví dụ: VCI)", value="VCI").upper()
 
@@ -1206,7 +1206,8 @@ with tab8:
     # **Lấy dữ liệu từ vnstock**
     try:
         stock = Vnstock().stock(symbol=stock_symbol, source='VCI')
-        stock_data = stock.quote.history(start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'))
+        stock_data = stock.quote.history(start=start_date.strftime('%Y-%m-%d'),
+                                         end=end_date.strftime('%Y-%m-%d'))
         if stock_data.empty:
             st.error(f"Không có dữ liệu cho mã {stock_symbol} trong khoảng thời gian đã chọn.")
             st.stop()
@@ -1233,87 +1234,95 @@ with tab8:
         ]
     )
 
-    # **Tính toán các chỉ báo kỹ thuật**
+    # Nhập khoảng thời gian cho các chỉ báo nếu được chọn
     if "SMA (Đường trung bình động đơn giản)" in indicators:
         sma_period = st.number_input("Chọn khoảng thời gian cho SMA", min_value=1, max_value=200, value=50)
-        stock_data['SMA'] = stock_data['close'].rolling(window=sma_period).mean()
-
     if "EMA (Đường trung bình động hàm mũ)" in indicators:
         ema_period = st.number_input("Chọn khoảng thời gian cho EMA", min_value=1, max_value=200, value=50)
-        stock_data['EMA'] = stock_data['close'].ewm(span=ema_period, adjust=False).mean()
-
     if "RSI (Chỉ số sức mạnh tương đối)" in indicators:
         rsi_period = st.number_input("Chọn khoảng thời gian cho RSI", min_value=1, max_value=100, value=14)
-        delta = stock_data['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
-        rs = gain / loss
-        stock_data['RSI'] = 100 - (100 / (1 + rs))
-
-    if "MACD" in indicators:
-        stock_data['EMA12'] = stock_data['close'].ewm(span=12, adjust=False).mean()
-        stock_data['EMA26'] = stock_data['close'].ewm(span=26, adjust=False).mean()
-        stock_data['MACD'] = stock_data['EMA12'] - stock_data['EMA26']
-        stock_data['Signal_Line'] = stock_data['MACD'].ewm(span=9, adjust=False).mean()
-
     if "Bollinger Bands" in indicators:
         bb_period = st.number_input("Chọn khoảng thời gian cho Bollinger Bands", min_value=1, max_value=200, value=20)
-        stock_data['Middle_Band'] = stock_data['close'].rolling(window=bb_period).mean()
-        stock_data['Upper_Band'] = stock_data['Middle_Band'] + 2 * stock_data['close'].rolling(window=bb_period).std()
-        stock_data['Lower_Band'] = stock_data['Middle_Band'] - 2 * stock_data['close'].rolling(window=bb_period).std()
-
     if "Stochastic Oscillator" in indicators:
         stoch_period = st.number_input("Chọn khoảng thời gian cho Stochastic Oscillator", min_value=1, max_value=100, value=14)
-        low_min = stock_data['low'].rolling(window=stoch_period).min()
-        high_max = stock_data['high'].rolling(window=stoch_period).max()
-        stock_data['%K'] = (stock_data['close'] - low_min) / (high_max - low_min) * 100
-        stock_data['%D'] = stock_data['%K'].rolling(window=3).mean()
-
     if "CCI (Commodity Channel Index)" in indicators:
         cci_period = st.number_input("Chọn khoảng thời gian cho CCI", min_value=1, max_value=200, value=20)
-        tp = (stock_data['high'] + stock_data['low'] + stock_data['close']) / 3
-        sma_tp = tp.rolling(window=cci_period).mean()
-        mad = tp.rolling(window=cci_period).apply(lambda x: np.fabs(x - x.mean()).mean())
-        stock_data['CCI'] = (tp - sma_tp) / (0.015 * mad)
-
     if "ADX (Average Directional Index)" in indicators:
         adx_period = st.number_input("Chọn khoảng thời gian cho ADX", min_value=1, max_value=100, value=14)
-        high = stock_data['high']
-        low = stock_data['low']
-        close = stock_data['close']
-        tr1 = high - low
-        tr2 = (high - close.shift()).abs()
-        tr3 = (low - close.shift()).abs()
-        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = true_range.rolling(window=adx_period).mean()
-        up_move = high - high.shift()
-        down_move = low.shift() - low
-        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
-        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
-        plus_di = 100 * (pd.Series(plus_dm).rolling(window=adx_period).sum() / atr)
-        minus_di = 100 * (pd.Series(minus_dm).rolling(window=adx_period).sum() / atr)
-        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
-        stock_data['ADX'] = dx.rolling(window=adx_period).mean()
-
-    # --- THÊM CHỈ BÁO MỚI: DMI ---
     if "DMI" in indicators:
         dmi_period = st.number_input("Chọn khoảng thời gian cho DMI", min_value=1, max_value=100, value=14)
-        high = stock_data['high']
-        low = stock_data['low']
-        close = stock_data['close']
-        up_move = high.diff()
-        down_move = -low.diff()
-        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
-        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
-        tr1 = high - low
-        tr2 = (high - close.shift()).abs()
-        tr3 = (low - close.shift()).abs()
-        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = true_range.rolling(window=dmi_period).mean()
-        plus_di = 100 * (pd.Series(plus_dm).rolling(window=dmi_period).sum() / atr)
-        minus_di = 100 * (pd.Series(minus_dm).rolling(window=dmi_period).sum() / atr)
-        stock_data['+DI'] = plus_di
-        stock_data['-DI'] = minus_di
+
+    # Hàm tính toán các chỉ báo kỹ thuật
+    def compute_indicators():
+        global stock_data
+        if "SMA (Đường trung bình động đơn giản)" in indicators:
+            stock_data['SMA'] = stock_data['close'].rolling(window=sma_period).mean()
+        if "EMA (Đường trung bình động hàm mũ)" in indicators:
+            stock_data['EMA'] = stock_data['close'].ewm(span=ema_period, adjust=False).mean()
+        if "RSI (Chỉ số sức mạnh tương đối)" in indicators:
+            delta = stock_data['close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
+            rs = gain / loss
+            stock_data['RSI'] = 100 - (100 / (1 + rs))
+        if "MACD" in indicators:
+            stock_data['EMA12'] = stock_data['close'].ewm(span=12, adjust=False).mean()
+            stock_data['EMA26'] = stock_data['close'].ewm(span=26, adjust=False).mean()
+            stock_data['MACD'] = stock_data['EMA12'] - stock_data['EMA26']
+            stock_data['Signal_Line'] = stock_data['MACD'].ewm(span=9, adjust=False).mean()
+        if "Bollinger Bands" in indicators:
+            stock_data['Middle_Band'] = stock_data['close'].rolling(window=bb_period).mean()
+            stock_data['Upper_Band'] = stock_data['Middle_Band'] + 2 * stock_data['close'].rolling(window=bb_period).std()
+            stock_data['Lower_Band'] = stock_data['Middle_Band'] - 2 * stock_data['close'].rolling(window=bb_period).std()
+        if "Stochastic Oscillator" in indicators:
+            low_min = stock_data['low'].rolling(window=stoch_period).min()
+            high_max = stock_data['high'].rolling(window=stoch_period).max()
+            stock_data['%K'] = (stock_data['close'] - low_min) / (high_max - low_min) * 100
+            stock_data['%D'] = stock_data['%K'].rolling(window=3).mean()
+        if "CCI (Commodity Channel Index)" in indicators:
+            tp = (stock_data['high'] + stock_data['low'] + stock_data['close']) / 3
+            sma_tp = tp.rolling(window=cci_period).mean()
+            mad = tp.rolling(window=cci_period).apply(lambda x: np.fabs(x - x.mean()).mean())
+            stock_data['CCI'] = (tp - sma_tp) / (0.015 * mad)
+        if "ADX (Average Directional Index)" in indicators:
+            high = stock_data['high']
+            low = stock_data['low']
+            close = stock_data['close']
+            tr1 = high - low
+            tr2 = (high - close.shift()).abs()
+            tr3 = (low - close.shift()).abs()
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = true_range.rolling(window=adx_period).mean()
+            up_move = high - high.shift()
+            down_move = low.shift() - low
+            plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+            minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+            plus_di = 100 * (pd.Series(plus_dm).rolling(window=adx_period).sum() / atr)
+            minus_di = 100 * (pd.Series(minus_dm).rolling(window=adx_period).sum() / atr)
+            dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+            stock_data['ADX'] = dx.rolling(window=adx_period).mean()
+        if "DMI" in indicators:
+            high = stock_data['high']
+            low = stock_data['low']
+            close = stock_data['close']
+            up_move = high.diff()
+            down_move = -low.diff()
+            plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+            minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+            tr1 = high - low
+            tr2 = (high - close.shift()).abs()
+            tr3 = (low - close.shift()).abs()
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = true_range.rolling(window=dmi_period).mean()
+            plus_di = 100 * (pd.Series(plus_dm).rolling(window=dmi_period).sum() / atr)
+            minus_di = 100 * (pd.Series(minus_dm).rolling(window=dmi_period).sum() / atr)
+            stock_data['+DI'] = plus_di
+            stock_data['-DI'] = minus_di
+
+    # Chạy tính toán chỉ báo trong một tiến trình riêng
+    indicator_thread = threading.Thread(target=compute_indicators)
+    indicator_thread.start()
+    indicator_thread.join()  # Chờ tiến trình tính toán hoàn thành
 
     # **Tạo biểu đồ với khối lượng có trục Y phụ**
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, 
@@ -1340,42 +1349,63 @@ with tab8:
 
     # **Thêm các chỉ báo kỹ thuật vào biểu đồ hàng trên**
     if "SMA (Đường trung bình động đơn giản)" in indicators:
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['SMA'], name=f"SMA {sma_period}", line=dict(color='orange')), row=1, col=1, secondary_y=False)
-
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['SMA'], 
+                                 name=f"SMA {sma_period}", line=dict(color='orange')),
+                      row=1, col=1, secondary_y=False)
     if "EMA (Đường trung bình động hàm mũ)" in indicators:
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['EMA'], name=f"EMA {ema_period}", line=dict(color='green')), row=1, col=1, secondary_y=False)
-
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['EMA'], 
+                                 name=f"EMA {ema_period}", line=dict(color='green')),
+                      row=1, col=1, secondary_y=False)
     if "Bollinger Bands" in indicators:
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Upper_Band'], name="Upper Band", line=dict(color='red')), row=1, col=1, secondary_y=False)
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Middle_Band'], name="Middle Band", line=dict(color='purple')), row=1, col=1, secondary_y=False)
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Lower_Band'], name="Lower Band", line=dict(color='red')), row=1, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Upper_Band'], 
+                                 name="Upper Band", line=dict(color='red')),
+                      row=1, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Middle_Band'], 
+                                 name="Middle Band", line=dict(color='purple')),
+                      row=1, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Lower_Band'], 
+                                 name="Lower Band", line=dict(color='red')),
+                      row=1, col=1, secondary_y=False)
 
     # **Thêm các chỉ báo kỹ thuật vào hàng dưới**
     if "RSI (Chỉ số sức mạnh tương đối)" in indicators:
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['RSI'], name="RSI", line=dict(color='purple')), row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['RSI'], 
+                                 name="RSI", line=dict(color='purple')),
+                      row=2, col=1)
         fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
         fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
-
     if "MACD" in indicators:
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['MACD'], name="MACD", line=dict(color='blue')), row=2, col=1)
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Signal_Line'], name="Signal Line", line=dict(color='red')), row=2, col=1)
-
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['MACD'], 
+                                 name="MACD", line=dict(color='blue')),
+                      row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['Signal_Line'], 
+                                 name="Signal Line", line=dict(color='red')),
+                      row=2, col=1)
     if "Stochastic Oscillator" in indicators:
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['%K'], name="Stochastic %K", line=dict(color='blue')), row=2, col=1)
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['%D'], name="Stochastic %D", line=dict(color='orange')), row=2, col=1)
-
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['%K'], 
+                                 name="Stochastic %K", line=dict(color='blue')),
+                      row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['%D'], 
+                                 name="Stochastic %D", line=dict(color='orange')),
+                      row=2, col=1)
     if "CCI (Commodity Channel Index)" in indicators:
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['CCI'], name="CCI", line=dict(color='brown')), row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['CCI'], 
+                                 name="CCI", line=dict(color='brown')),
+                      row=2, col=1)
         fig.add_hline(y=100, line_dash="dash", line_color="green", row=2, col=1)
         fig.add_hline(y=-100, line_dash="dash", line_color="green", row=2, col=1)
-
     if "ADX (Average Directional Index)" in indicators:
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['ADX'], name="ADX", line=dict(color='magenta')), row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['ADX'], 
+                                 name="ADX", line=dict(color='magenta')),
+                      row=2, col=1)
         fig.add_hline(y=25, line_dash="dash", line_color="gray", row=2, col=1)
-
     if "DMI" in indicators:
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['+DI'], name="+DI", line=dict(color='blue')), row=2, col=1)
-        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['-DI'], name="-DI", line=dict(color='red')), row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['+DI'], 
+                                 name="+DI", line=dict(color='blue')),
+                      row=2, col=1)
+        fig.add_trace(go.Scatter(x=stock_data['time'], y=stock_data['-DI'], 
+                                 name="-DI", line=dict(color='red')),
+                      row=2, col=1)
 
     # **Cập nhật giao diện**
     fig.update_layout(
