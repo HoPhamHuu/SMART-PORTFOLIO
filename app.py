@@ -416,6 +416,7 @@ with tab3:
 ###########################################
 # Tab 4: Tối ưu danh mục (SGD - Sharpe)
 ###########################################
+# Tab 4: Tối ưu danh mục (SGD - Sharpe)
 with tab4:
     st.header("Tối ưu danh mục (SGD - Sharpe)")
     try:
@@ -426,34 +427,56 @@ with tab4:
         st.error("File 'processed_stock_data.csv' không tồn tại. Vui lòng tải dữ liệu ở tab 'Tải dữ liệu cổ phiếu'.")
         st.stop()
 
+    # Tính lợi nhuận kỳ vọng và ma trận hiệp phương sai
     expected_returns = processed_data.groupby('symbol')['daily_return'].mean()
     cov_matrix = processed_data.pivot(index='time', columns='symbol', values='daily_return').cov()
 
-    # Thêm hàm chiếu trọng số lên simplex
-    def project_simplex(v, s=1):
-        v = np.maximum(v, 0)
-        total = np.sum(v)
-        return v / total * s if total != 0 else v
+    # Chuyển đổi thành mảng NumPy
+    expected_returns_np = expected_returns.values
+    cov_matrix_np = cov_matrix.values
 
-    def sgd_portfolio_optimization_sharpe(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000):
-        weights = (expected_returns / expected_returns.sum())
-        weights = weights.values  # chuyển sang mảng NumPy để thuận tiện tính toán
-        for epoch in range(epochs):
-            portfolio_return = np.dot(weights, expected_returns)
-            portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-            grad = 2 * np.dot(cov_matrix, weights)
-            weights -= learning_rate * grad
-            # Sử dụng project_simplex để đảm bảo trọng số không âm và tổng = 1
-            weights = project_simplex(weights)
-        return weights
+    # Khởi tạo trọng số ban đầu
+    weights = expected_returns_np / np.sum(expected_returns_np)
 
-    optimal_weights_sgd_sharpe = sgd_portfolio_optimization_sharpe(expected_returns, cov_matrix, learning_rate=0.01, epochs=1000)
+    # Tham số SGD
+    learning_rate = 0.01
+    epochs = 1000
 
+    # Vòng lặp SGD để tối đa hóa Sharpe
+    for epoch in range(epochs):
+        # Tính lợi nhuận và độ biến động của danh mục
+        portfolio_return = np.dot(weights, expected_returns_np)
+        portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix_np, weights)))
+        
+        if portfolio_volatility > 0:
+            # Tính gradient của tỷ số Sharpe
+            numerator = expected_returns_np * portfolio_volatility**2 - portfolio_return * np.dot(cov_matrix_np, weights)
+            grad = numerator / (portfolio_volatility**3)
+            # Cập nhật trọng số theo hướng tối đa hóa Sharpe (gradient dương)
+            weights += learning_rate * grad
+        else:
+            # Xử lý trường hợp độ biến động bằng 0
+            weights += learning_rate * np.zeros_like(weights)
+        
+        # Chiếu trọng số lên simplex: đảm bảo tổng bằng 1 và không âm
+        weights = np.maximum(weights, 0)
+        total = np.sum(weights)
+        weights = weights / total if total != 0 else weights
+
+    # Chuyển trọng số tối ưu thành pandas Series để dễ thao tác
+    optimal_weights_sgd_sharpe = pd.Series(weights, index=expected_returns.index)
+
+    # Hiển thị trọng số tối ưu
     st.subheader("Trọng số tối ưu (SGD - Sharpe):")
-    for i, symbol in enumerate(expected_returns.index):
-        st.write(f"Cổ phiếu: {symbol}, Trọng số tối ưu: {optimal_weights_sgd_sharpe[i]:.4f}")
-    sharpe_ratio = np.dot(optimal_weights_sgd_sharpe, expected_returns) / np.sqrt(np.dot(optimal_weights_sgd_sharpe.T, np.dot(cov_matrix, optimal_weights_sgd_sharpe)))
+    for symbol, weight in optimal_weights_sgd_sharpe.items():
+        st.write(f"Cổ phiếu: {symbol}, Trọng số tối ưu: {weight:.4f}")
+
+    # Tính và hiển thị tỷ số Sharpe
+    portfolio_return = np.dot(optimal_weights_sgd_sharpe, expected_returns_np)
+    portfolio_volatility = np.sqrt(np.dot(optimal_weights_sgd_sharpe.T, np.dot(cov_matrix_np, optimal_weights_sgd_sharpe)))
+    sharpe_ratio = portfolio_return / portfolio_volatility if portfolio_volatility > 0 else 0
     st.write(f"Tỷ lệ Sharpe tốt nhất: {sharpe_ratio:.4f}")
+
     # Biểu đồ trực quan: Pie & Bar
     portfolio_data_sharpe = pd.DataFrame({
         'Cổ phiếu': expected_returns.index,
@@ -476,7 +499,7 @@ with tab4:
             textinfo='percent+label',
             textfont_size=14,
             marker=dict(
-                colors=[random_color() for _ in range(len(portfolio_data_filtered))],
+                colors=[f'#{random.randint(0, 0xFFFFFF):06x}' for _ in range(len(portfolio_data_filtered))],
                 line=dict(color='#000000', width=2)
             ),
             hoverinfo='label+percent'
@@ -490,7 +513,7 @@ with tab4:
             x=portfolio_data_filtered['Cổ phiếu'],
             y=portfolio_data_filtered['Trọng số tối ưu'],
             marker=dict(
-                color=[random_color() for _ in range(len(portfolio_data_filtered))],
+                color=[f'#{random.randint(0, 0xFFFFFF):06x}' for _ in range(len(portfolio_data_filtered))],
                 line=dict(color='#000000', width=2)
             ),
         ),
@@ -507,18 +530,16 @@ with tab4:
         showlegend=True
     )
     st.plotly_chart(fig_sharpe, use_container_width=True)
-    
+
     # Tính lợi nhuận tích lũy của danh mục
-    processed_data['weighted_return_sharpe'] = processed_data['daily_return'] * processed_data['symbol'].map(
-        dict(zip(expected_returns.index, optimal_weights_sgd_sharpe))
-    )
+    processed_data['weighted_return_sharpe'] = processed_data['daily_return'] * processed_data['symbol'].map(optimal_weights_sgd_sharpe)
     portfolio_daily_return_sharpe = processed_data.groupby('time')['weighted_return_sharpe'].sum().reset_index()
     portfolio_daily_return_sharpe.rename(columns={'weighted_return_sharpe': 'daily_return'}, inplace=True)
     portfolio_daily_return_sharpe['cumulative_portfolio_return'] = (1 + portfolio_daily_return_sharpe['daily_return']).cumprod()
-    
+
     st.subheader("Lợi nhuận tích lũy của danh mục (SGD - Sharpe)")
     st.line_chart(portfolio_daily_return_sharpe.set_index('time')['cumulative_portfolio_return'])
-    
+
     # So sánh với VN-Index
     with st.expander("So sánh với VN-Index"):
         try:
@@ -536,10 +557,10 @@ with tab4:
             except Exception as e:
                 st.error(f"Lỗi khi tải dữ liệu VN-Index: {e}")
                 st.stop()
-        
+
         vnindex_data['market_return'] = vnindex_data['close'].pct_change()
         vnindex_data['cumulative_daily_return'] = (1 + vnindex_data['market_return']).cumprod()
-        
+
         comparison_sharpe = pd.merge(
             portfolio_daily_return_sharpe,
             vnindex_data[['time', 'cumulative_daily_return']],
@@ -550,10 +571,10 @@ with tab4:
             'cumulative_portfolio_return': 'Lợi nhuận danh mục (Sharpe)',
             'cumulative_daily_return': 'Lợi nhuận VN-Index'
         }, inplace=True)
-        
+
         st.subheader("Bảng so sánh lợi nhuận (10 dòng cuối)")
         st.dataframe(comparison_sharpe[['time', 'Lợi nhuận danh mục (Sharpe)', 'Lợi nhuận VN-Index']].tail(10))
-        
+
         fig_comp_sharpe = go.Figure()
         fig_comp_sharpe.add_trace(go.Scatter(
             x=comparison_sharpe['time'],
