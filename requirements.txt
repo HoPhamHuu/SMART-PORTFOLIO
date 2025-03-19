@@ -5,3 +5,4 @@ vnstock
 scipy
 plotly
 datetime
+threading
