@@ -5,5 +5,3 @@ vnstock
 scipy
 plotly
 datetime
-
-import threading
