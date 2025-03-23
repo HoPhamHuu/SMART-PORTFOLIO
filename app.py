@@ -45,42 +45,51 @@ with tab1:
     
     if st.button("Tải dữ liệu"):
         symbols = [s.strip().upper() for s in symbols_input.split(",") if s.strip()]
+        
         if not symbols:
             st.error("Danh sách mã cổ phiếu không được để trống!")
         else:
-            # Lưu symbols vào session state
-            st.session_state['symbols'] = symbols
+            st.session_state['symbols'] = symbols  # Lưu vào session state
             all_data = []
+            
             for symbol in symbols:
                 try:
-                    stock = Vnstock().stock(symbol=symbol, source='VCI')
+                    stock = Vnstock().stock(symbol=symbol, source='TCBS')  # Sử dụng TCBS
                     historical_data = stock.quote.history(start='2020-01-01', end='2024-12-31')
+                    
                     if historical_data.empty:
                         st.warning(f"Không tìm thấy dữ liệu cho mã: {symbol}")
                         continue
+                    
                     historical_data['symbol'] = symbol
                     all_data.append(historical_data)
                     st.success(f"Đã tải dữ liệu cho: {symbol}")
                 except Exception as e:
                     st.error(f"Lỗi khi tải dữ liệu cho {symbol}: {e}")
+            
             if all_data:
                 final_data = pd.concat(all_data, ignore_index=True)
                 st.write("Đã kết hợp toàn bộ dữ liệu thành công!")
                 
                 def calculate_features(data):
-                    data['daily_return'] = data['close'].pct_change()
+                    close_col = 'close' if 'close' in data.columns else ('Close' if 'Close' in data.columns else None)
+                    if close_col is None:
+                        st.error("Không tìm thấy cột giá đóng cửa!")
+                        return data
+                    
+                    data['daily_return'] = data[close_col].pct_change()
                     data['volatility'] = data['daily_return'].rolling(window=30).std()
                     data.dropna(inplace=True)
                     return data
                 
-                processed_data = final_data.groupby('symbol').apply(calculate_features)
+                processed_data = final_data.groupby('symbol', group_keys=False).apply(calculate_features)
                 processed_data = processed_data.reset_index(drop=True)
                 processed_data.to_csv("processed_stock_data.csv", index=False)
+                
                 st.success("Dữ liệu xử lý đã được lưu vào file 'processed_stock_data.csv'.")
                 st.dataframe(processed_data)
             else:
                 st.error("Không có dữ liệu hợp lệ để xử lý!")
-
 ###########################################
 # Tab 2: Tối ưu danh mục (SLSQP)
 ###########################################
